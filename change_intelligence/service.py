@@ -114,6 +114,14 @@ def build_comment(
             )
         lines.append("")
     lines.append(render_markdown(summary, recommendations))
+    lines.extend(
+        [
+            "",
+            "---",
+            "<!-- ci-feedback: pending -->",
+            "Reply with `/ci correct`, `/ci wrong-doc`, or `/ci missed-doc`.",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -232,6 +240,14 @@ def process_github_event(raw_body: str, signature: Optional[str], config: Servic
             actual_docs_changed=actual_docs_changed,
         )
 
+    comment_recommendations = filter_comment_recommendations(
+        analysis["recommendations"],
+        config.confidence_threshold,
+    )
+    comment_suppressed = len(comment_recommendations) == 0
+    comment_body = None
+    comment = None
+
     trace = None
     if config.novyx_store is not None:
         try:
@@ -240,17 +256,10 @@ def process_github_event(raw_body: str, signature: Optional[str], config: Servic
                 pull_request_number,
                 analysis["summary"]["changed_files"],
                 analysis["recommendations"],
+                comment_suppressed=comment_suppressed,
             )
         except Exception:
             trace = None
-
-    comment_recommendations = filter_comment_recommendations(
-        analysis["recommendations"],
-        config.confidence_threshold,
-    )
-    comment_suppressed = len(comment_recommendations) == 0
-    comment_body = None
-    comment = None
 
     if not comment_suppressed:
         comment_body = build_comment(

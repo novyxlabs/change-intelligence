@@ -1,0 +1,51 @@
+name: Daily Metrics
+
+on:
+  schedule:
+    - cron: "17 14 * * *"
+  workflow_dispatch:
+
+jobs:
+  metrics:
+    runs-on: ubuntu-latest
+    env:
+      RESULT_PATH: /tmp/change-intelligence-metrics.json
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: pip install .
+
+      - name: Compute Metrics
+        env:
+          NOVYX_API_KEY: ${{ secrets.NOVYX_API_KEY }}
+        run: python -m change_intelligence.metrics --output-path "$RESULT_PATH"
+
+      - name: Workflow Summary
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          result = json.loads(Path(os.environ["RESULT_PATH"]).read_text())
+          lines = [
+              "# Change Intelligence Metrics",
+              "",
+              f"- Analysis runs: `{result.get('analysis_runs')}`",
+              f"- Feedback total: `{result.get('feedback_total')}`",
+              f"- Top-1 rate: `{result.get('top_1_rate')}`",
+              f"- Comment rate: `{result.get('comment_rate')}`",
+              f"- False-positive rate: `{result.get('false_positive_rate')}`",
+          ]
+          Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(lines) + "\n", encoding="utf8")
+          PY
+
+      - name: Upload Result Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: change-intelligence-metrics-${{ github.run_id }}
+          path: ${{ env.RESULT_PATH }}

@@ -37,6 +37,12 @@ class NovyxStore:
             for memory in results
         ]
 
+    def list_memories(self, tags: Sequence[str], limit: int = 200) -> List[Dict[str, object]]:
+        try:
+            return self.client.memories(limit=limit, tags=list(tags))
+        except NovyxError:
+            return []
+
     def rank_signals(self, repository: str, changed_files: Sequence[str]) -> Dict[str, Dict[str, object]]:
         signals: Dict[str, Dict[str, object]] = {}
 
@@ -101,6 +107,8 @@ class NovyxStore:
         pull_request_number: int,
         changed_files: Sequence[str],
         recommendations: Sequence[Dict[str, object]],
+        *,
+        comment_suppressed: bool = False,
     ) -> Dict[str, object]:
         trace = self.client.trace_create(
             self.config.agent_id,
@@ -131,7 +139,76 @@ class NovyxStore:
                 )
             self._remember_prediction(repository, pull_request_number, changed_files, recommendation)
 
+        self._remember_run_outcome(
+            repository,
+            pull_request_number,
+            recommendations,
+            comment_suppressed=comment_suppressed,
+        )
+
         return self._finalize_trace(trace_id, recommendations)
+
+    def record_feedback(
+        self,
+        repository: str,
+        pull_request_number: int,
+        command: str,
+        commenter: str,
+        comment_url: str,
+    ) -> Dict[str, object]:
+        label = command.replace("/ci ", "").strip()
+        try:
+            memory = self.client.remember(
+                f"Feedback on {repository}#{pull_request_number}: {label}",
+                importance=8,
+                tags=["ci-feedback", label],
+                context=f"{repository}#{pull_request_number}",
+                metadata={
+                    "repository": repository,
+                    "pull_request_number": pull_request_number,
+                    "feedback": label,
+                    "commenter": commenter,
+                    "comment_url": comment_url,
+                },
+            )
+        except NovyxError as error:
+            if "409" in str(error):
+                memory = {}
+            else:
+                raise
+        return {
+            "status": "recorded",
+            "feedback": label,
+            "memory": memory,
+        }
+
+    def _remember_run_outcome(
+        self,
+        repository: str,
+        pull_request_number: int,
+        recommendations: Sequence[Dict[str, object]],
+        *,
+        comment_suppressed: bool,
+    ) -> None:
+        top = recommendations[0] if recommendations else {}
+        try:
+            self.client.remember(
+                f"Analysis run for {repository}#{pull_request_number}: {'suppressed' if comment_suppressed else 'commented'}",
+                importance=5,
+                tags=["analysis-run", "suppressed" if comment_suppressed else "commented"],
+                context=f"{repository}#{pull_request_number}",
+                metadata={
+                    "repository": repository,
+                    "pull_request_number": pull_request_number,
+                    "comment_suppressed": comment_suppressed,
+                    "top_doc": top.get("relative_path"),
+                    "top_confidence": top.get("confidence"),
+                    "recommendation_count": len(recommendations),
+                },
+            )
+        except NovyxError as error:
+            if "409" not in str(error):
+                raise
 
     def learn_from_merge(
         self,
