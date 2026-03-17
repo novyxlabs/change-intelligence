@@ -13,6 +13,8 @@ class NovyxConfig:
     agent_id: str = "change-intelligence"
     api_url: Optional[str] = None
     source: str = "change-intelligence-app"
+    space_name: str = "change-intelligence"
+    space_description: str = "Learning data for Change Intelligence — doc mappings, seeds, replay results"
 
 
 class NovyxStore:
@@ -24,9 +26,15 @@ class NovyxStore:
             agent_id=config.agent_id,
             source=config.source,
         )
+        self._space_id: Optional[str] = None
 
     def recall_patterns(self, query: str, limit: int = 5) -> List[Dict[str, object]]:
-        results = self.client.recall(query, limit=limit, tags=["change-pattern"])
+        results = self.client.recall(
+            query,
+            limit=limit,
+            tags=["change-pattern"],
+            space_id=self.space_id,
+        )
         return [
             {
                 "id": memory.id,
@@ -39,9 +47,15 @@ class NovyxStore:
 
     def list_memories(self, tags: Sequence[str], limit: int = 200) -> List[Dict[str, object]]:
         try:
-            return self.client.memories(limit=limit, tags=list(tags))
+            return self.client.memories(limit=limit, tags=list(tags), space_id=self.space_id)
         except NovyxError:
             return []
+
+    @property
+    def space_id(self) -> str:
+        if self._space_id is None:
+            self._space_id = self._ensure_space_id()
+        return self._space_id
 
     def rank_signals(self, repository: str, changed_files: Sequence[str]) -> Dict[str, Dict[str, object]]:
         signals: Dict[str, Dict[str, object]] = {}
@@ -115,6 +129,35 @@ class NovyxStore:
                 return name
         return None
 
+    def _ensure_space_id(self) -> str:
+        try:
+            spaces = self.client.list_spaces()
+        except NovyxError:
+            spaces = {}
+
+        for item in self._space_items(spaces):
+            name = item.get("name")
+            if isinstance(name, str) and name == self.config.space_name:
+                space_id = item.get("space_id") or item.get("id")
+                if isinstance(space_id, str):
+                    return space_id
+
+        created = self.client.create_space(
+            name=self.config.space_name,
+            description=self.config.space_description,
+        )
+        space_id = created.get("space_id") or created.get("id")
+        if not isinstance(space_id, str):
+            raise ValueError("Novyx space creation did not return a usable space_id.")
+        return space_id
+
+    def _space_items(self, spaces: Dict[str, object]) -> List[Dict[str, object]]:
+        if isinstance(spaces, dict):
+            for key in ("spaces", "items", "results"):
+                if isinstance(spaces.get(key), list):
+                    return [item for item in spaces[key] if isinstance(item, dict)]
+        return []
+
     def record_analysis(
         self,
         repository: str,
@@ -172,7 +215,7 @@ class NovyxStore:
     ) -> Dict[str, object]:
         label = command.replace("/ci ", "").strip()
         try:
-            memory = self.client.remember(
+            memory = self._remember(
                 f"Feedback on {repository}#{pull_request_number}: {label}",
                 importance=8,
                 tags=["ci-feedback", label],
@@ -206,7 +249,7 @@ class NovyxStore:
     ) -> None:
         top = recommendations[0] if recommendations else {}
         try:
-            self.client.remember(
+            self._remember(
                 f"Analysis run for {repository}#{pull_request_number}: {'suppressed' if comment_suppressed else 'commented'}",
                 importance=5,
                 tags=["analysis-run", "suppressed" if comment_suppressed else "commented"],
@@ -321,7 +364,7 @@ class NovyxStore:
         recommendation: Dict[str, object],
     ) -> None:
         try:
-            self.client.remember(
+            self._remember(
                 f"{', '.join(changed_files)} changed -> {recommendation['relative_path']} was predicted for docs review",
                 importance=max(4, min(10, int(recommendation["confidence"] / 10))),
                 tags=["change-pattern", "docs-impact", "predicted"],
@@ -355,7 +398,7 @@ class NovyxStore:
             else f"{', '.join(changed_files)} changed -> {doc} should have been documented after merge"
         )
         try:
-            self.client.remember(
+            self._remember(
                 sentence,
                 importance=9 if accepted else 2,
                 tags=[
@@ -376,6 +419,13 @@ class NovyxStore:
         except NovyxError as error:
             if "409" not in str(error):
                 raise
+
+    def _remember(self, observation: str, **kwargs: object) -> Dict[str, object]:
+        return self.client.remember(
+            observation,
+            space_id=self.space_id,
+            **kwargs,
+        )
 
     def _safe_triple(self, subject: str, predicate: str, object_name: str, metadata: Dict[str, object]) -> None:
         try:
