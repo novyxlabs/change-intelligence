@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      RESULT_PATH: /tmp/change-intelligence-result.json
     steps:
       - uses: actions/checkout@v4
 
@@ -33,4 +35,38 @@ jobs:
           DOCS_REPO: novyxlabs/novyx-docs
           DOCS_PATH: docs
           CONFIDENCE_THRESHOLD: "60"
-        run: python -m change_intelligence.run_event --event-path /tmp/change-intelligence-event.json
+        run: python -m change_intelligence.run_event --event-path /tmp/change-intelligence-event.json --output-path "$RESULT_PATH"
+
+      - name: Workflow Summary
+        env:
+          RESULT_PATH: ${{ env.RESULT_PATH }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          result = json.loads(Path(os.environ["RESULT_PATH"]).read_text())
+          recommendations = result.get("recommendations", [])
+          top = recommendations[0] if recommendations else None
+          lines = [
+              "# Change Intelligence",
+              "",
+              f"- Repository: `{result.get('repository')}`",
+              f"- PR: `#{result.get('pull_request_number')}`",
+              f"- Comment suppressed: `{result.get('comment_suppressed')}`",
+              f"- Recommendation count: `{len(recommendations)}`",
+          ]
+          if top:
+              lines.extend([
+                  f"- Top doc: `{top.get('relative_path')}`",
+                  f"- Top confidence: `{top.get('confidence')}`",
+              ])
+          Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(lines) + "\n", encoding="utf8")
+          PY
+
+      - name: Upload Result Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: change-intelligence-result-${{ github.run_id }}
+          path: ${{ env.RESULT_PATH }}

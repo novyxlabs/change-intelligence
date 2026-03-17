@@ -43,11 +43,15 @@ def build_config() -> ServiceConfig:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run change-intelligence against a GitHub event payload.")
     parser.add_argument("--event-path", required=True, help="Path to a JSON file containing the event payload")
+    parser.add_argument("--output-path", help="Optional path to write the JSON payload result")
     args = parser.parse_args()
 
     raw_body = Path(args.event_path).read_text(encoding="utf8")
     result = process_github_event(raw_body, None, build_config())
-    print(json.dumps(result["payload"], indent=2))
+    rendered = json.dumps(result["payload"], indent=2)
+    if args.output_path:
+        Path(args.output_path).write_text(rendered, encoding="utf8")
+    print(rendered)
 
 
 if __name__ == "__main__":
