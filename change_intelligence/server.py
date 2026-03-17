@@ -44,6 +44,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
 def build_config() -> ServiceConfig:
     docs_root = Path(os.environ.get("DOCS_ROOT", "docs")).resolve()
+    docs_repo = os.environ.get("DOCS_REPO")
     docs_path = os.environ.get("DOCS_PATH", "docs")
     confidence_threshold = int(os.environ.get("CONFIDENCE_THRESHOLD", "60"))
     webhook_secret = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
@@ -62,6 +63,7 @@ def build_config() -> ServiceConfig:
         )
     return ServiceConfig(
         docs_root=docs_root,
+        docs_repo=docs_repo,
         docs_path=docs_path,
         webhook_secret=webhook_secret,
         novyx_store=store,

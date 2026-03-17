@@ -1,0 +1,36 @@
+name: Analyze PR
+
+on:
+  repository_dispatch:
+    types:
+      - analyze-pr
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: pip install .
+
+      - name: Write Event Payload
+        env:
+          CLIENT_PAYLOAD: ${{ toJson(github.event.client_payload) }}
+        run: |
+          printf '%s' "$CLIENT_PAYLOAD" > /tmp/change-intelligence-event.json
+
+      - name: Analyze
+        env:
+          GITHUB_TOKEN: ${{ secrets.CHANGE_INTELLIGENCE_GITHUB_TOKEN }}
+          NOVYX_API_KEY: ${{ secrets.NOVYX_API_KEY }}
+          DOCS_REPO: novyxlabs/novyx-docs
+          DOCS_PATH: docs
+          CONFIDENCE_THRESHOLD: "60"
+        run: python -m change_intelligence.run_event --event-path /tmp/change-intelligence-event.json

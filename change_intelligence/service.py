@@ -15,6 +15,7 @@ from .novyx_store import NovyxStore
 @dataclass
 class ServiceConfig:
     docs_root: Path
+    docs_repo: Optional[str] = None
     docs_path: str = "docs"
     webhook_secret: str = ""
     novyx_store: Optional[NovyxStore] = None
@@ -126,6 +127,8 @@ def process_github_event(raw_body: str, signature: Optional[str], config: Servic
     repository = (payload.get("repository") or {}).get("full_name") or "unknown/repo"
     pull_request_number = pull_request.get("number") or 0
     owner, repo = split_repository(repository)
+    docs_repo = config.docs_repo or repository
+    docs_owner, docs_repo_name = split_repository(docs_repo)
     installation_id = (payload.get("installation") or {}).get("id")
     patch = pull_request.get("patch") or payload.get("patch")
 
@@ -135,10 +138,10 @@ def process_github_event(raw_body: str, signature: Optional[str], config: Servic
     if config.github_client is not None:
         ref = ((pull_request.get("head") or {}).get("sha")) or None
         docs = config.github_client.repo_docs(
-            owner,
-            repo,
+            docs_owner,
+            docs_repo_name,
             config.docs_path,
-            ref,
+            None if docs_repo != repository else ref,
             installation_id,
         )
         files = config.github_client.pull_request_files(
@@ -179,8 +182,14 @@ def process_github_event(raw_body: str, signature: Optional[str], config: Servic
     patterns: List[Dict[str, object]] = []
     learned_signals: Dict[str, Dict[str, object]] = {}
     if config.novyx_store is not None:
-        patterns = config.novyx_store.recall_patterns(query)
-        learned_signals = config.novyx_store.rank_signals(repository, changed_file_names)
+        try:
+            patterns = config.novyx_store.recall_patterns(query)
+        except Exception:
+            patterns = []
+        try:
+            learned_signals = config.novyx_store.rank_signals(repository, changed_file_names)
+        except Exception:
+            learned_signals = {}
 
     analysis = analyze_patch(
         patch,
@@ -193,18 +202,27 @@ def process_github_event(raw_body: str, signature: Optional[str], config: Servic
 
     learning_feedback = None
     if config.novyx_store is not None and pull_request.get("merged_at"):
-        learning_feedback = config.novyx_store.learn_from_merge(
-            repository,
-            pull_request_number,
-            analysis["summary"]["changed_files"],
-            [item["relative_path"] for item in analysis["recommendations"]],
-            sorted(actual_docs_changed),
-        )
-        patterns = config.novyx_store.recall_patterns(query)
-        learned_signals = apply_learning_feedback(
-            config.novyx_store.rank_signals(repository, changed_file_names),
-            learning_feedback,
-        )
+        try:
+            learning_feedback = config.novyx_store.learn_from_merge(
+                repository,
+                pull_request_number,
+                analysis["summary"]["changed_files"],
+                [item["relative_path"] for item in analysis["recommendations"]],
+                sorted(actual_docs_changed),
+            )
+        except Exception:
+            learning_feedback = None
+        try:
+            patterns = config.novyx_store.recall_patterns(query)
+        except Exception:
+            patterns = patterns
+        try:
+            learned_signals = apply_learning_feedback(
+                config.novyx_store.rank_signals(repository, changed_file_names),
+                learning_feedback,
+            )
+        except Exception:
+            learned_signals = apply_learning_feedback(learned_signals, learning_feedback)
         analysis = analyze_patch(
             patch,
             docs_root=config.docs_root,
@@ -216,12 +234,15 @@ def process_github_event(raw_body: str, signature: Optional[str], config: Servic
 
     trace = None
     if config.novyx_store is not None:
-        trace = config.novyx_store.record_analysis(
-            repository,
-            pull_request_number,
-            analysis["summary"]["changed_files"],
-            analysis["recommendations"],
-        )
+        try:
+            trace = config.novyx_store.record_analysis(
+                repository,
+                pull_request_number,
+                analysis["summary"]["changed_files"],
+                analysis["recommendations"],
+            )
+        except Exception:
+            trace = None
 
     comment_recommendations = filter_comment_recommendations(
         analysis["recommendations"],
