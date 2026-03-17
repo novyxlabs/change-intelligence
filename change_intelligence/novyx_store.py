@@ -88,7 +88,7 @@ class NovyxStore:
             return
 
         for item in self._triple_items(triples):
-            doc = item.get("object") or item.get("object_name")
+            doc = self._doc_name_from_triple(item)
             if not doc:
                 continue
             bucket = signals.setdefault(
@@ -100,6 +100,20 @@ class NovyxStore:
                 },
             )
             bucket[key] += 1
+
+    def _doc_name_from_triple(self, item: Dict[str, object]) -> Optional[str]:
+        doc = item.get("object_name")
+        if isinstance(doc, str):
+            return doc
+
+        obj = item.get("object")
+        if isinstance(obj, str):
+            return obj
+        if isinstance(obj, dict):
+            name = obj.get("name")
+            if isinstance(name, str):
+                return name
+        return None
 
     def record_analysis(
         self,
@@ -253,6 +267,22 @@ class NovyxStore:
             "accepted": accepted,
             "rejected": rejected,
             "missed": missed,
+        }
+
+    def seed_accepted_docs(
+        self,
+        repository: str,
+        pull_request_number: int,
+        changed_files: Sequence[str],
+        actual_docs: Sequence[str],
+    ) -> Dict[str, object]:
+        accepted = sorted({Path(path).name for path in actual_docs})
+        for doc in accepted:
+            self._reinforce(repository, pull_request_number, changed_files, doc, accepted=True)
+        return {
+            "accepted": accepted,
+            "rejected": [],
+            "missed": [],
         }
 
     def _reinforce(

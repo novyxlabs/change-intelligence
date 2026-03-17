@@ -177,6 +177,47 @@ class GitHubClient:
                 )
         return docs
 
+    def pull_requests(
+        self,
+        owner: str,
+        repo: str,
+        *,
+        state: str = "closed",
+        sort: str = "updated",
+        direction: str = "desc",
+        per_page: int = 30,
+    ) -> List[Dict[str, object]]:
+        token = self._installation_token(None)
+        response = self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls",
+            token=token,
+            params={
+                "state": state,
+                "sort": sort,
+                "direction": direction,
+                "per_page": per_page,
+            },
+        )
+        return response.json()
+
+    def commit_files(
+        self,
+        owner: str,
+        repo: str,
+        ref: str,
+        installation_id: Optional[int],
+    ) -> List[Dict[str, object]]:
+        token = self._installation_token(installation_id)
+        response = self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/commits/{ref}",
+            token=token,
+        )
+        payload = response.json()
+        files = payload.get("files") or []
+        return [item for item in files if isinstance(item, dict)]
+
     def upsert_issue_comment(
         self,
         owner: str,
