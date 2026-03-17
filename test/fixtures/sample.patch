@@ -1,0 +1,14 @@
+diff --git a/src/billing/createCheckoutSession.ts b/src/billing/createCheckoutSession.ts
+index 1111111..2222222 100644
+--- a/src/billing/createCheckoutSession.ts
++++ b/src/billing/createCheckoutSession.ts
+@@ -1,4 +1,8 @@
+-export async function createCheckoutSession(planId: string) {
++export async function createCheckoutSession(planId: string, couponCode?: string) {
++  if (couponCode) {
++    console.log("Applying coupon", couponCode);
++  }
++
+   return {
+     checkoutUrl: "https://checkout.example.com",
+   };

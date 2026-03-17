@@ -1,0 +1,22 @@
+{
+  "name": "change-intelligence",
+  "version": "0.1.0",
+  "description": "Open-source docs change intelligence for product teams.",
+  "type": "module",
+  "bin": {
+    "change-intel": "./src/cli.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "analyze:fixture": "node ./src/cli.js --diff ./test/fixtures/sample.patch --docs ./test/fixtures/repo/docs --code ./test/fixtures/repo/src",
+    "server": "node ./src/server.js"
+  },
+  "keywords": [
+    "docs",
+    "developer-tools",
+    "git",
+    "automation",
+    "documentation"
+  ],
+  "license": "MIT"
+}

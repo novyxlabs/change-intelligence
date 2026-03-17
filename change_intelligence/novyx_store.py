@@ -1,0 +1,295 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Optional, Sequence
+
+from novyx import Novyx, NovyxError
+
+
+@dataclass
+class NovyxConfig:
+    api_key: str
+    agent_id: str = "change-intelligence"
+    api_url: Optional[str] = None
+    source: str = "change-intelligence-app"
+
+
+class NovyxStore:
+    def __init__(self, config: NovyxConfig, client: Optional[Novyx] = None):
+        self.config = config
+        self.client = client or Novyx(
+            api_key=config.api_key,
+            api_url=config.api_url or "https://novyx-ram-api.fly.dev",
+            agent_id=config.agent_id,
+            source=config.source,
+        )
+
+    def recall_patterns(self, query: str, limit: int = 5) -> List[Dict[str, object]]:
+        results = self.client.recall(query, limit=limit, tags=["change-pattern"])
+        return [
+            {
+                "id": memory.id,
+                "observation": memory.observation,
+                "score": memory.score,
+                "tags": memory.tags,
+            }
+            for memory in results
+        ]
+
+    def rank_signals(self, repository: str, changed_files: Sequence[str]) -> Dict[str, Dict[str, object]]:
+        signals: Dict[str, Dict[str, object]] = {}
+
+        for path in changed_files:
+            self._accumulate_triples(signals, path, "documents", "graph_hits")
+            self._accumulate_triples(signals, path, "avoids_documenting", "rejected_hits")
+
+        pattern_query = f"{repository} changed files: {', '.join(changed_files[:3])}"
+        for memory in self.recall_patterns(pattern_query, limit=10):
+            metadata = {}
+            raw = memory.get("metadata")
+            if isinstance(raw, dict):
+                metadata = raw
+            doc = metadata.get("relative_path")
+            if not doc:
+                continue
+            bucket = signals.setdefault(
+                str(doc),
+                {
+                    "graph_hits": 0,
+                    "accepted_hits": 0,
+                    "rejected_hits": 0,
+                },
+            )
+            tags = set(memory.get("tags") or [])
+            if "accepted" in tags:
+                bucket["accepted_hits"] += 1
+            if "rejected" in tags:
+                bucket["rejected_hits"] += 1
+
+        return signals
+
+    def _accumulate_triples(
+        self,
+        signals: Dict[str, Dict[str, object]],
+        subject: str,
+        predicate: str,
+        key: str,
+    ) -> None:
+        try:
+            triples = self.client.triples(subject=subject, predicate=predicate, limit=50)
+        except NovyxError:
+            return
+
+        for item in self._triple_items(triples):
+            doc = item.get("object") or item.get("object_name")
+            if not doc:
+                continue
+            bucket = signals.setdefault(
+                str(doc),
+                {
+                    "graph_hits": 0,
+                    "accepted_hits": 0,
+                    "rejected_hits": 0,
+                },
+            )
+            bucket[key] += 1
+
+    def record_analysis(
+        self,
+        repository: str,
+        pull_request_number: int,
+        changed_files: Sequence[str],
+        recommendations: Sequence[Dict[str, object]],
+    ) -> Dict[str, object]:
+        trace = self.client.trace_create(
+            self.config.agent_id,
+            metadata={
+                "repository": repository,
+                "pull_request_number": pull_request_number,
+            },
+        )
+        trace_id = trace.get("trace_id")
+
+        self.client.trace_step(
+            trace_id,
+            "observation",
+            f"Analyzed files: {', '.join(changed_files) or 'none'}",
+            metadata={"count": len(changed_files)},
+        )
+
+        for recommendation in recommendations:
+            for path in changed_files:
+                self._safe_triple(
+                    path,
+                    "predicted_documents",
+                    recommendation["relative_path"],
+                    metadata={
+                        "pull_request_number": pull_request_number,
+                        "confidence": recommendation["confidence"],
+                    },
+                )
+            self._remember_prediction(repository, pull_request_number, changed_files, recommendation)
+
+        return self._finalize_trace(trace_id, recommendations)
+
+    def learn_from_merge(
+        self,
+        repository: str,
+        pull_request_number: int,
+        changed_files: Sequence[str],
+        predicted_docs: Sequence[str],
+        actual_docs: Sequence[str],
+    ) -> Dict[str, object]:
+        actual = {Path(path).name for path in actual_docs}
+        predicted = {Path(path).name for path in predicted_docs}
+
+        accepted = sorted(actual & predicted)
+        rejected = sorted(predicted - actual)
+        missed = sorted(actual - predicted)
+
+        for doc in accepted:
+            self._reinforce(repository, pull_request_number, changed_files, doc, accepted=True)
+        for doc in rejected:
+            self._reinforce(repository, pull_request_number, changed_files, doc, accepted=False)
+        for doc in missed:
+            self._remember_feedback(
+                repository,
+                pull_request_number,
+                changed_files,
+                doc,
+                accepted=True,
+                predicted=False,
+            )
+            for path in changed_files:
+                self._safe_triple(
+                    path,
+                    "documents",
+                    doc,
+                    metadata={
+                        "pull_request_number": pull_request_number,
+                        "feedback": "missed",
+                    },
+                )
+
+        return {
+            "accepted": accepted,
+            "rejected": rejected,
+            "missed": missed,
+        }
+
+    def _reinforce(
+        self,
+        repository: str,
+        pull_request_number: int,
+        changed_files: Sequence[str],
+        doc: str,
+        accepted: bool,
+    ) -> None:
+        predicate = "documents" if accepted else "avoids_documenting"
+        for path in changed_files:
+            self._safe_triple(
+                path,
+                predicate,
+                doc,
+                metadata={
+                    "pull_request_number": pull_request_number,
+                    "feedback": "accepted" if accepted else "rejected",
+                },
+            )
+        self._remember_feedback(
+            repository,
+            pull_request_number,
+            changed_files,
+            doc,
+            accepted=accepted,
+            predicted=True,
+        )
+
+    def _remember_prediction(
+        self,
+        repository: str,
+        pull_request_number: int,
+        changed_files: Sequence[str],
+        recommendation: Dict[str, object],
+    ) -> None:
+        try:
+            self.client.remember(
+                f"{', '.join(changed_files)} changed -> {recommendation['relative_path']} was predicted for docs review",
+                importance=max(4, min(10, int(recommendation["confidence"] / 10))),
+                tags=["change-pattern", "docs-impact", "predicted"],
+                context=f"{repository}#{pull_request_number}",
+                metadata={
+                    "repository": repository,
+                    "pull_request_number": pull_request_number,
+                    "relative_path": recommendation["relative_path"],
+                    "confidence": recommendation["confidence"],
+                    "score": recommendation["score"],
+                    "evidence": recommendation["evidence"],
+                },
+            )
+        except NovyxError as error:
+            if "409" not in str(error):
+                raise
+
+    def _remember_feedback(
+        self,
+        repository: str,
+        pull_request_number: int,
+        changed_files: Sequence[str],
+        doc: str,
+        accepted: bool,
+        predicted: bool,
+    ) -> None:
+        label = "accepted" if accepted else "rejected"
+        sentence = (
+            f"{', '.join(changed_files)} changed -> {doc} was {label} after merge"
+            if predicted
+            else f"{', '.join(changed_files)} changed -> {doc} should have been documented after merge"
+        )
+        try:
+            self.client.remember(
+                sentence,
+                importance=9 if accepted else 2,
+                tags=[
+                    "change-pattern",
+                    "merge-feedback",
+                    label,
+                    "predicted" if predicted else "missed",
+                ],
+                context=f"{repository}#{pull_request_number}",
+                metadata={
+                    "repository": repository,
+                    "pull_request_number": pull_request_number,
+                    "relative_path": doc,
+                    "accepted": accepted,
+                    "predicted": predicted,
+                },
+            )
+        except NovyxError as error:
+            if "409" not in str(error):
+                raise
+
+    def _safe_triple(self, subject: str, predicate: str, object_name: str, metadata: Dict[str, object]) -> None:
+        try:
+            self.client.triple(subject, predicate, object_name, metadata=metadata)
+        except NovyxError as error:
+            if "409" not in str(error):
+                raise
+
+    def _triple_items(self, triples: Dict[str, object]) -> List[Dict[str, object]]:
+        if isinstance(triples, dict):
+            for key in ("triples", "items", "results"):
+                if isinstance(triples.get(key), list):
+                    return [item for item in triples[key] if isinstance(item, dict)]
+        return []
+
+    def _finalize_trace(self, trace_id: str, recommendations: Sequence[Dict[str, object]]) -> Dict[str, object]:
+        self.client.trace_step(
+            trace_id,
+            "action",
+            f"Recommended docs: {', '.join(item['relative_path'] for item in recommendations) or 'none'}",
+            metadata={"count": len(recommendations)},
+        )
+        self.client.trace_complete(trace_id)
+        return {"trace_id": trace_id}
