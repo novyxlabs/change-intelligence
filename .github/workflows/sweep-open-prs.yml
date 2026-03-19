@@ -1,0 +1,42 @@
+name: Sweep Open PRs
+
+on:
+  schedule:
+    - cron: "47 * * * *"
+  workflow_dispatch:
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: pip install .
+
+      - name: Sweep
+        env:
+          GITHUB_TOKEN: ${{ secrets.CHANGE_INTELLIGENCE_GITHUB_TOKEN }}
+          CHANGE_INTELLIGENCE_SWEEP_REPOS: novyxlabs/novyx-core,novyxlabs/novyx-mcp,novyxlabs/novyx-starter-kit,novyxlabs/novyx-memory-skill,novyxlabs/novyx-vault,novyxlabs/novyx-site
+        run: python -m change_intelligence.sweep_open_prs > /tmp/change-intelligence-sweep.json
+
+      - name: Workflow Summary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('/tmp/change-intelligence-sweep.json').read_text())
+          lines = [
+              "# Sweep Open PRs",
+              "",
+              f"- Dispatched: `{len(result.get('dispatched', []))}`",
+              f"- Skipped: `{len(result.get('skipped', []))}`",
+          ]
+          for item in result.get("dispatched", []):
+              lines.append(f"- dispatched `{item['repository']}#{item['pull_request']}`")
+          Path(__import__('os').environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(lines) + "\n", encoding="utf8")
+          PY
