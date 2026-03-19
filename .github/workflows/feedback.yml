@@ -28,6 +28,7 @@ jobs:
       - name: Capture Feedback
         env:
           NOVYX_API_KEY: ${{ secrets.NOVYX_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.CHANGE_INTELLIGENCE_GITHUB_TOKEN }}
         run: python -m change_intelligence.run_feedback --event-path /tmp/change-intelligence-feedback-event.json --output-path "$RESULT_PATH"
 
       - name: Workflow Summary

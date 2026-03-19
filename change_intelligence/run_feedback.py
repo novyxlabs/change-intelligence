@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 from .feedback import process_feedback_event
+from .github_client import GitHubClient
 from .novyx_store import NovyxConfig, NovyxStore
 
 
@@ -22,6 +23,8 @@ def main() -> None:
             agent_id=os.environ.get("NOVYX_AGENT_ID", "change-intelligence"),
         )
     )
+    if GitHubClient.from_env() is None:
+        raise SystemExit("GITHUB_TOKEN or GitHub App credentials are required for trusted feedback capture.")
     payload = process_feedback_event(Path(args.event_path).read_text(encoding="utf8"), store)
     rendered = json.dumps(payload, indent=2)
     if args.output_path:

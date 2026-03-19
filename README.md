@@ -92,6 +92,7 @@ Reviewer feedback is part of the live loop:
 
 - every posted Change Intelligence comment includes `Reply with /ci correct, /ci wrong-doc, or /ci missed-doc`
 - `feedback.yml` captures those commands and writes them into Novyx as explicit feedback memories
+- only trusted repo participants count: the feedback workflow verifies that a Change Intelligence comment exists on the PR and that the feedback came from an `OWNER`, `MEMBER`, `COLLABORATOR`, or another user with GitHub write-level permission
 - `daily-metrics.yml` computes the proof-point KPIs from that feedback and the analysis-run records
 
 Novyx usage in the current app:

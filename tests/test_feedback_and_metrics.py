@@ -1,6 +1,6 @@
 import unittest
 
-from change_intelligence.feedback import parse_feedback_command
+from change_intelligence.feedback import parse_feedback_command, process_feedback_event
 from change_intelligence.metrics import compute_metrics
 
 
@@ -17,11 +17,93 @@ class FakeStore:
         return []
 
 
+class FakeFeedbackStore:
+    def __init__(self):
+        self.recorded = []
+
+    def record_feedback(self, **kwargs):
+        self.recorded.append(kwargs)
+        return {"feedback": kwargs["command"].replace("/ci ", "")}
+
+
 class FeedbackAndMetricsTests(unittest.TestCase):
     def test_parse_feedback_command(self):
         self.assertEqual(parse_feedback_command("/ci correct"), "/ci correct")
         self.assertEqual(parse_feedback_command("Looks good\n/ci wrong-doc"), "/ci wrong-doc")
         self.assertIsNone(parse_feedback_command("thanks"))
+
+    def test_process_feedback_event_requires_trusted_commenter(self):
+        import change_intelligence.feedback as module
+
+        class FakeGitHub:
+            def issue_comments(self, owner, repo, issue_number, installation_id):
+                return [
+                    {
+                        "html_url": "https://github.com/acme/app/pull/1#issuecomment-1",
+                        "body": "<!-- change-intelligence-comment -->\nReport",
+                        "user": {"login": "change-intelligence-bot"},
+                        "author_association": "NONE",
+                    },
+                    {
+                        "html_url": "https://github.com/acme/app/pull/1#issuecomment-2",
+                        "body": "/ci correct",
+                        "user": {"login": "outsider"},
+                        "author_association": "NONE",
+                    },
+                ]
+
+            def user_permission(self, owner, repo, username, installation_id):
+                return None
+
+        original_from_env = module.GitHubClient.from_env
+        try:
+            module.GitHubClient.from_env = classmethod(lambda cls: FakeGitHub())
+            result = process_feedback_event(
+                '{"repository":{"full_name":"acme/app"},"issue":{"number":1,"pull_request":{"url":"present"}},"comment":{"body":"/ci correct","html_url":"https://github.com/acme/app/pull/1#issuecomment-2","user":{"login":"outsider"}}}',
+                FakeFeedbackStore(),
+            )
+        finally:
+            module.GitHubClient.from_env = original_from_env
+
+        self.assertTrue(result["ignored"])
+        self.assertEqual(result["reason"], "untrusted-feedback")
+
+    def test_process_feedback_event_accepts_trusted_commenter(self):
+        import change_intelligence.feedback as module
+
+        class FakeGitHub:
+            def issue_comments(self, owner, repo, issue_number, installation_id):
+                return [
+                    {
+                        "html_url": "https://github.com/acme/app/pull/1#issuecomment-1",
+                        "body": "<!-- change-intelligence-comment -->\nReport",
+                        "user": {"login": "change-intelligence-bot"},
+                        "author_association": "NONE",
+                    },
+                    {
+                        "html_url": "https://github.com/acme/app/pull/1#issuecomment-2",
+                        "body": "/ci correct",
+                        "user": {"login": "blake"},
+                        "author_association": "OWNER",
+                    },
+                ]
+
+            def user_permission(self, owner, repo, username, installation_id):
+                return "admin"
+
+        store = FakeFeedbackStore()
+        original_from_env = module.GitHubClient.from_env
+        try:
+            module.GitHubClient.from_env = classmethod(lambda cls: FakeGitHub())
+            result = process_feedback_event(
+                '{"repository":{"full_name":"acme/app"},"issue":{"number":1,"pull_request":{"url":"present"}},"comment":{"body":"/ci correct","html_url":"https://github.com/acme/app/pull/1#issuecomment-2","user":{"login":"blake"}}}',
+                store,
+            )
+        finally:
+            module.GitHubClient.from_env = original_from_env
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(store.recorded[0]["commenter"], "blake")
 
     def test_compute_metrics(self):
         store = FakeStore(

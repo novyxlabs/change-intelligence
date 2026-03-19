@@ -118,6 +118,52 @@ class GitHubClient:
             page += 1
         return files
 
+    def issue_comments(
+        self,
+        owner: str,
+        repo: str,
+        issue_number: int,
+        installation_id: Optional[int],
+    ) -> List[Dict[str, object]]:
+        token = self._installation_token(installation_id)
+        page = 1
+        comments: List[Dict[str, object]] = []
+        while True:
+            response = self._request(
+                "GET",
+                f"/repos/{owner}/{repo}/issues/{issue_number}/comments",
+                token=token,
+                params={"per_page": 100, "page": page},
+            )
+            batch = response.json()
+            comments.extend(batch)
+            if len(batch) < 100:
+                break
+            page += 1
+        return comments
+
+    def user_permission(
+        self,
+        owner: str,
+        repo: str,
+        username: str,
+        installation_id: Optional[int],
+    ) -> Optional[str]:
+        token = self._installation_token(installation_id)
+        try:
+            response = self._request(
+                "GET",
+                f"/repos/{owner}/{repo}/collaborators/{username}/permission",
+                token=token,
+            )
+        except requests.HTTPError as error:
+            if error.response is not None and error.response.status_code == 404:
+                return None
+            raise
+        payload = response.json()
+        permission = payload.get("permission")
+        return permission if isinstance(permission, str) else None
+
     def repo_docs(
         self,
         owner: str,
@@ -227,13 +273,7 @@ class GitHubClient:
         body: str,
     ) -> Dict[str, object]:
         token = self._installation_token(installation_id)
-        response = self._request(
-            "GET",
-            f"/repos/{owner}/{repo}/issues/{issue_number}/comments",
-            token=token,
-            params={"per_page": 100},
-        )
-        comments = response.json()
+        comments = self.issue_comments(owner, repo, issue_number, installation_id)
         marked = next((item for item in comments if COMMENT_MARKER in item.get("body", "")), None)
         comment_body = f"{COMMENT_MARKER}\n{body}"
 
@@ -262,13 +302,7 @@ class GitHubClient:
         installation_id: Optional[int],
     ) -> Optional[Dict[str, object]]:
         token = self._installation_token(installation_id)
-        response = self._request(
-            "GET",
-            f"/repos/{owner}/{repo}/issues/{issue_number}/comments",
-            token=token,
-            params={"per_page": 100},
-        )
-        comments = response.json()
+        comments = self.issue_comments(owner, repo, issue_number, installation_id)
         marked = next((item for item in comments if COMMENT_MARKER in item.get("body", "")), None)
         if not marked:
             return None

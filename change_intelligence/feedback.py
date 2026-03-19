@@ -4,10 +4,13 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from .github_client import COMMENT_MARKER, GitHubClient
 from .novyx_store import NovyxStore
 
 
 VALID_COMMANDS = {"/ci correct", "/ci wrong-doc", "/ci missed-doc"}
+TRUSTED_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
+TRUSTED_PERMISSIONS = {"write", "maintain", "admin"}
 
 
 def parse_feedback_command(body: str) -> Optional[str]:
@@ -29,6 +32,8 @@ def process_feedback_event(raw_body: str, store: NovyxStore) -> dict[str, object
         return {"ok": False, "ignored": True, "reason": "not-a-pull-request-comment"}
     if not command:
         return {"ok": False, "ignored": True, "reason": "no-feedback-command"}
+    if not is_trusted_feedback(payload):
+        return {"ok": False, "ignored": True, "reason": "untrusted-feedback"}
 
     result = store.record_feedback(
         repository=repository,
@@ -44,6 +49,44 @@ def process_feedback_event(raw_body: str, store: NovyxStore) -> dict[str, object
         "feedback": result["feedback"],
         "comment_url": comment.get("html_url"),
     }
+
+
+def is_trusted_feedback(payload: dict[str, object]) -> bool:
+    repository = (payload.get("repository") or {}).get("full_name") or ""
+    if "/" not in repository:
+        return False
+    owner, repo = repository.split("/", 1)
+    issue = payload.get("issue") or {}
+    comment = payload.get("comment") or {}
+    issue_number = int(issue.get("number") or 0)
+    comment_url = comment.get("html_url") or ""
+    commenter = ((comment.get("user") or {}).get("login") or "").strip()
+    if not issue_number or not comment_url or not commenter:
+        return False
+
+    github = GitHubClient.from_env()
+    if github is None:
+        return False
+
+    comments = github.issue_comments(owner, repo, issue_number, installation_id=None)
+    ci_comment_present = any(COMMENT_MARKER in (item.get("body") or "") for item in comments)
+    if not ci_comment_present:
+        return False
+
+    matching = next((item for item in comments if item.get("html_url") == comment_url), None)
+    if matching is None:
+        return False
+
+    author = (matching.get("user") or {}).get("login") or ""
+    if author.lower() != commenter.lower():
+        return False
+
+    association = str(matching.get("author_association") or "").upper()
+    if association in TRUSTED_ASSOCIATIONS:
+        return True
+
+    permission = github.user_permission(owner, repo, commenter, installation_id=None)
+    return permission in TRUSTED_PERMISSIONS
 
 
 def write_json(path: str, payload: dict[str, object]) -> None:
