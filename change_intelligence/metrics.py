@@ -4,13 +4,32 @@ import argparse
 import json
 import os
 from pathlib import Path
+from typing import Dict, Iterable
 
 from .novyx_store import NovyxConfig, NovyxStore
 
 
-def compute_metrics(store: NovyxStore, limit: int = 500) -> dict[str, object]:
-    feedback = store.list_memories(["ci-feedback"], limit=limit)
-    runs = store.list_memories(["analysis-run"], limit=limit)
+def repository_for(memory: Dict[str, object]) -> str:
+    metadata = memory.get("metadata")
+    if isinstance(metadata, dict):
+        repository = metadata.get("repository")
+        if isinstance(repository, str) and repository:
+            return repository
+
+    context = memory.get("context")
+    if isinstance(context, str) and "#" in context:
+        return context.split("#", 1)[0]
+
+    return "unknown"
+
+
+def compute_rate(numerator: int, denominator: int) -> float:
+    return (numerator / denominator) if denominator else 0.0
+
+
+def summarize(feedback: Iterable[Dict[str, object]], runs: Iterable[Dict[str, object]]) -> dict[str, object]:
+    feedback = list(feedback)
+    runs = list(runs)
 
     correct = sum(1 for item in feedback if "correct" in (item.get("tags") or []))
     wrong_doc = sum(1 for item in feedback if "wrong-doc" in (item.get("tags") or []))
@@ -24,9 +43,9 @@ def compute_metrics(store: NovyxStore, limit: int = 500) -> dict[str, object]:
     return {
         "feedback_total": feedback_total,
         "analysis_runs": run_total,
-        "top_1_rate": (correct / feedback_total) if feedback_total else 0.0,
-        "comment_rate": (commented / run_total) if run_total else 0.0,
-        "false_positive_rate": (wrong_doc / commented) if commented else 0.0,
+        "top_1_rate": compute_rate(correct, feedback_total),
+        "comment_rate": compute_rate(commented, run_total),
+        "false_positive_rate": compute_rate(wrong_doc, commented),
         "counts": {
             "correct": correct,
             "wrong_doc": wrong_doc,
@@ -35,6 +54,31 @@ def compute_metrics(store: NovyxStore, limit: int = 500) -> dict[str, object]:
             "suppressed": suppressed,
         },
     }
+
+
+def compute_metrics(store: NovyxStore, limit: int = 500) -> dict[str, object]:
+    feedback = store.list_memories(["ci-feedback"], limit=limit)
+    runs = store.list_memories(["analysis-run"], limit=limit)
+
+    metrics = summarize(feedback, runs)
+
+    repositories = sorted({repository_for(item) for item in [*feedback, *runs]})
+    metrics["repositories"] = {}
+    for repository in repositories:
+        repo_feedback = [item for item in feedback if repository_for(item) == repository]
+        repo_runs = [item for item in runs if repository_for(item) == repository]
+        metrics["repositories"][repository] = summarize(repo_feedback, repo_runs)
+
+    analysis_runs = int(metrics["analysis_runs"])
+    metrics["proof_window"] = {
+        "minimum_prs": 20,
+        "maximum_prs": 30,
+        "analysis_runs": analysis_runs,
+        "remaining_to_minimum": max(0, 20 - analysis_runs),
+        "ready_for_case_study": analysis_runs >= 20,
+        "window_complete": 20 <= analysis_runs <= 30,
+    }
+    return metrics
 
 
 def main() -> None:

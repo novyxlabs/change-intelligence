@@ -32,6 +32,8 @@ jobs:
           import os
           from pathlib import Path
           result = json.loads(Path(os.environ["RESULT_PATH"]).read_text())
+          proof = result.get("proof_window", {})
+          repositories = result.get("repositories", {})
           lines = [
               "# Change Intelligence Metrics",
               "",
@@ -40,7 +42,15 @@ jobs:
               f"- Top-1 rate: `{result.get('top_1_rate')}`",
               f"- Comment rate: `{result.get('comment_rate')}`",
               f"- False-positive rate: `{result.get('false_positive_rate')}`",
+              f"- Ready for case study: `{proof.get('ready_for_case_study')}`",
+              f"- Remaining to 20 PRs: `{proof.get('remaining_to_minimum')}`",
           ]
+          if repositories:
+              lines.extend(["", "## By Repository", ""])
+              for name, repo in sorted(repositories.items()):
+                  lines.append(
+                      f"- `{name}`: runs={repo.get('analysis_runs')} top1={repo.get('top_1_rate')} comment={repo.get('comment_rate')} false_positive={repo.get('false_positive_rate')}"
+                  )
           Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(lines) + "\n", encoding="utf8")
           PY
 

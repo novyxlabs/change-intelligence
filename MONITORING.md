@@ -1,6 +1,6 @@
 # Change Intelligence Monitoring Window
 
-This project tracks a formal `20-30 PR` monitoring window on live `novyxlabs/novyx-core` pull requests.
+This project tracks a formal `20-30 PR` monitoring window across the live repos where Change Intelligence is installed.
 
 The proof-point KPIs are:
 
@@ -24,3 +24,18 @@ Reporting rule:
 
 - do not quote metrics publicly until the window has at least `20` analyzed PRs
 - once the window reaches `20-30` PRs, freeze the numbers and use that snapshot for the "Built on Novyx Core" proof point
+
+Current installation set:
+
+- `novyxlabs/novyx-core`
+- `novyxlabs/novyx-mcp`
+- `novyxlabs/novyx-starter-kit`
+- `novyxlabs/novyx-memory-skill`
+- `novyxlabs/novyx-vault`
+- `novyxlabs/novyx-site`
+
+Reporting format:
+
+- overall metrics from all installed repos
+- per-repo breakdown for internal review
+- only freeze and publish the overall snapshot once the combined window reaches `20-30` analyzed PRs

@@ -26,14 +26,14 @@ class FeedbackAndMetricsTests(unittest.TestCase):
     def test_compute_metrics(self):
         store = FakeStore(
             feedback=[
-                {"tags": ["ci-feedback", "correct"]},
-                {"tags": ["ci-feedback", "wrong-doc"]},
-                {"tags": ["ci-feedback", "missed-doc"]},
+                {"tags": ["ci-feedback", "correct"], "context": "novyxlabs/novyx-core#1"},
+                {"tags": ["ci-feedback", "wrong-doc"], "context": "novyxlabs/novyx-core#2"},
+                {"tags": ["ci-feedback", "missed-doc"], "context": "novyxlabs/novyx-mcp#3"},
             ],
             runs=[
-                {"tags": ["analysis-run", "commented"]},
-                {"tags": ["analysis-run", "commented"]},
-                {"tags": ["analysis-run", "suppressed"]},
+                {"tags": ["analysis-run", "commented"], "context": "novyxlabs/novyx-core#1"},
+                {"tags": ["analysis-run", "commented"], "context": "novyxlabs/novyx-core#2"},
+                {"tags": ["analysis-run", "suppressed"], "context": "novyxlabs/novyx-mcp#3"},
             ],
         )
         metrics = compute_metrics(store)
@@ -42,6 +42,11 @@ class FeedbackAndMetricsTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["top_1_rate"], 1 / 3)
         self.assertAlmostEqual(metrics["comment_rate"], 2 / 3)
         self.assertAlmostEqual(metrics["false_positive_rate"], 1 / 2)
+        self.assertEqual(metrics["proof_window"]["remaining_to_minimum"], 17)
+        self.assertFalse(metrics["proof_window"]["ready_for_case_study"])
+        self.assertEqual(metrics["repositories"]["novyxlabs/novyx-core"]["analysis_runs"], 2)
+        self.assertAlmostEqual(metrics["repositories"]["novyxlabs/novyx-core"]["top_1_rate"], 1 / 2)
+        self.assertEqual(metrics["repositories"]["novyxlabs/novyx-mcp"]["analysis_runs"], 1)
 
 
 if __name__ == "__main__":
