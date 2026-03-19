@@ -88,6 +88,12 @@ Current behavior:
 - deletes the marker comment when a rerun drops below the threshold
 - returns the comment body and structured recommendations
 
+Reviewer feedback is part of the live loop:
+
+- every posted Change Intelligence comment includes `Reply with /ci correct, /ci wrong-doc, or /ci missed-doc`
+- `feedback.yml` captures those commands and writes them into Novyx as explicit feedback memories
+- `daily-metrics.yml` computes the proof-point KPIs from that feedback and the analysis-run records
+
 Novyx usage in the current app:
 
 - `recall()` to fetch similar historical change patterns
@@ -105,6 +111,10 @@ Optional configuration:
 - `DOCS_PATH` to change the docs folder fetched from GitHub, default `docs`
 - `GITHUB_API_URL` for GitHub Enterprise or testing
 - `CONFIDENCE_THRESHOLD` to tune when the app comments, default `60`
+
+Reference monitoring plan:
+
+- [MONITORING.md](/Users/blakeheron/Desktop/demo/MONITORING.md)
 
 Example payload:
 
