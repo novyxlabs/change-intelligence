@@ -21,6 +21,7 @@ jobs:
       - name: Sweep
         env:
           GITHUB_TOKEN: ${{ secrets.CHANGE_INTELLIGENCE_GITHUB_TOKEN }}
+          NOVYX_API_KEY: ${{ secrets.NOVYX_API_KEY }}
           CHANGE_INTELLIGENCE_SWEEP_REPOS: novyxlabs/novyx-core,novyxlabs/novyx-mcp,novyxlabs/novyx-starter-kit,novyxlabs/novyx-memory-skill,novyxlabs/novyx-vault,novyxlabs/novyx-site
         run: python -m change_intelligence.sweep_open_prs > /tmp/change-intelligence-sweep.json
 

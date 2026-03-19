@@ -166,6 +166,7 @@ class NovyxStore:
         recommendations: Sequence[Dict[str, object]],
         *,
         comment_suppressed: bool = False,
+        head_sha: Optional[str] = None,
     ) -> Dict[str, object]:
         trace = self.client.trace_create(
             self.config.agent_id,
@@ -201,6 +202,7 @@ class NovyxStore:
             pull_request_number,
             recommendations,
             comment_suppressed=comment_suppressed,
+            head_sha=head_sha,
         )
 
         return self._finalize_trace(trace_id, recommendations)
@@ -246,11 +248,13 @@ class NovyxStore:
         recommendations: Sequence[Dict[str, object]],
         *,
         comment_suppressed: bool,
+        head_sha: Optional[str],
     ) -> None:
         top = recommendations[0] if recommendations else {}
+        sha_label = f"@{head_sha[:12]}" if head_sha else ""
         try:
             self._remember(
-                f"Analysis run for {repository}#{pull_request_number}: {'suppressed' if comment_suppressed else 'commented'}",
+                f"Analysis run for {repository}#{pull_request_number}{sha_label}: {'suppressed' if comment_suppressed else 'commented'}",
                 importance=5,
                 tags=["analysis-run", "suppressed" if comment_suppressed else "commented"],
                 context=f"{repository}#{pull_request_number}",
@@ -258,6 +262,7 @@ class NovyxStore:
                     "repository": repository,
                     "pull_request_number": pull_request_number,
                     "comment_suppressed": comment_suppressed,
+                    "head_sha": head_sha,
                     "top_doc": top.get("relative_path"),
                     "top_confidence": top.get("confidence"),
                     "recommendation_count": len(recommendations),
@@ -266,6 +271,18 @@ class NovyxStore:
         except NovyxError as error:
             if "409" not in str(error):
                 raise
+
+    def latest_analysis_for_pr(self, repository: str, pull_request_number: int) -> Optional[Dict[str, object]]:
+        target_context = f"{repository}#{pull_request_number}"
+        runs = [
+            item
+            for item in self.list_memories(["analysis-run"], limit=500)
+            if item.get("context") == target_context
+        ]
+        if not runs:
+            return None
+        runs.sort(key=self._memory_sort_key, reverse=True)
+        return runs[0]
 
     def learn_from_merge(
         self,
@@ -440,6 +457,13 @@ class NovyxStore:
                 if isinstance(triples.get(key), list):
                     return [item for item in triples[key] if isinstance(item, dict)]
         return []
+
+    def _memory_sort_key(self, item: Dict[str, object]) -> str:
+        for key in ("created_at", "timestamp", "updated_at"):
+            value = item.get(key)
+            if isinstance(value, str):
+                return value
+        return ""
 
     def _finalize_trace(self, trace_id: str, recommendations: Sequence[Dict[str, object]]) -> Dict[str, object]:
         self.client.trace_step(

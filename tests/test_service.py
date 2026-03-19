@@ -50,9 +50,9 @@ class FakeNovyxStore:
         )
         return {"accepted": ["billing.md"], "rejected": [], "missed": []}
 
-    def record_analysis(self, repository, pull_request_number, changed_files, recommendations):
+    def record_analysis(self, repository, pull_request_number, changed_files, recommendations, **kwargs):
         self.calls.append(
-            ("record", repository, pull_request_number, list(changed_files), len(recommendations))
+            ("record", repository, pull_request_number, list(changed_files), len(recommendations), kwargs)
         )
         return {"trace_id": "trace_123"}
 

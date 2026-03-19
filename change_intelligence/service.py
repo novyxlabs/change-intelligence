@@ -134,6 +134,7 @@ def process_github_event(raw_body: str, signature: Optional[str], config: Servic
     pull_request = payload.get("pull_request") or {}
     repository = (payload.get("repository") or {}).get("full_name") or "unknown/repo"
     pull_request_number = pull_request.get("number") or 0
+    head_sha = ((pull_request.get("head") or {}).get("sha")) or None
     owner, repo = split_repository(repository)
     docs_repo = config.docs_repo or repository
     docs_owner, docs_repo_name = split_repository(docs_repo)
@@ -257,6 +258,7 @@ def process_github_event(raw_body: str, signature: Optional[str], config: Servic
                 analysis["summary"]["changed_files"],
                 analysis["recommendations"],
                 comment_suppressed=comment_suppressed,
+                head_sha=head_sha,
             )
         except Exception:
             trace = None

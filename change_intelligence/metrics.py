@@ -27,9 +27,29 @@ def compute_rate(numerator: int, denominator: int) -> float:
     return (numerator / denominator) if denominator else 0.0
 
 
+def memory_sort_key(memory: Dict[str, object]) -> str:
+    for key in ("created_at", "timestamp", "updated_at"):
+        value = memory.get(key)
+        if isinstance(value, str):
+            return value
+    return ""
+
+
+def collapse_latest_by_context(memories: Iterable[Dict[str, object]]) -> list[Dict[str, object]]:
+    grouped: Dict[str, Dict[str, object]] = {}
+    for item in memories:
+        context = item.get("context")
+        if not isinstance(context, str) or not context:
+            continue
+        current = grouped.get(context)
+        if current is None or memory_sort_key(item) >= memory_sort_key(current):
+            grouped[context] = item
+    return list(grouped.values())
+
+
 def summarize(feedback: Iterable[Dict[str, object]], runs: Iterable[Dict[str, object]]) -> dict[str, object]:
-    feedback = list(feedback)
-    runs = list(runs)
+    feedback = collapse_latest_by_context(feedback)
+    runs = collapse_latest_by_context(runs)
 
     correct = sum(1 for item in feedback if "correct" in (item.get("tags") or []))
     wrong_doc = sum(1 for item in feedback if "wrong-doc" in (item.get("tags") or []))
@@ -43,6 +63,7 @@ def summarize(feedback: Iterable[Dict[str, object]], runs: Iterable[Dict[str, ob
     return {
         "feedback_total": feedback_total,
         "analysis_runs": run_total,
+        "unique_prs": run_total,
         "top_1_rate": compute_rate(correct, feedback_total),
         "comment_rate": compute_rate(commented, run_total),
         "false_positive_rate": compute_rate(wrong_doc, commented),
@@ -74,6 +95,7 @@ def compute_metrics(store: NovyxStore, limit: int = 500) -> dict[str, object]:
         "minimum_prs": 20,
         "maximum_prs": 30,
         "analysis_runs": analysis_runs,
+        "unique_prs": analysis_runs,
         "remaining_to_minimum": max(0, 20 - analysis_runs),
         "ready_for_case_study": analysis_runs >= 20,
         "window_complete": 20 <= analysis_runs <= 30,

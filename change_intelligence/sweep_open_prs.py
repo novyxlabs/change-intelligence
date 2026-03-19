@@ -6,6 +6,7 @@ import os
 from typing import Dict, List
 
 from .github_client import COMMENT_MARKER, GitHubClient
+from .novyx_store import NovyxConfig, NovyxStore
 
 
 def parse_repositories(raw: str) -> List[str]:
@@ -48,7 +49,25 @@ def dispatch_analysis(github: GitHubClient, repository: str, pull_request: Dict[
     )
 
 
-def sweep(github: GitHubClient, repositories: List[str]) -> Dict[str, object]:
+def already_analyzed_current_head(
+    store: NovyxStore | None,
+    repository: str,
+    pull_request: Dict[str, object],
+) -> bool:
+    if store is None:
+        return False
+    latest = store.latest_analysis_for_pr(repository, int(pull_request["number"]))
+    if not latest:
+        return False
+    metadata = latest.get("metadata")
+    if not isinstance(metadata, dict):
+        return False
+    current_sha = ((pull_request.get("head") or {}).get("sha")) or ""
+    analyzed_sha = metadata.get("head_sha") or ""
+    return bool(current_sha and analyzed_sha and current_sha == analyzed_sha)
+
+
+def sweep(github: GitHubClient, repositories: List[str], store: NovyxStore | None = None) -> Dict[str, object]:
     dispatched = []
     skipped = []
 
@@ -59,6 +78,9 @@ def sweep(github: GitHubClient, repositories: List[str]) -> Dict[str, object]:
             number = int(pull["number"])
             if has_change_intelligence_comment(github, owner, repo, number):
                 skipped.append({"repository": repository, "pull_request": number, "reason": "already-commented"})
+                continue
+            if already_analyzed_current_head(store, repository, pull):
+                skipped.append({"repository": repository, "pull_request": number, "reason": "already-analyzed-head"})
                 continue
             dispatch_analysis(github, repository, pull)
             dispatched.append({"repository": repository, "pull_request": number})
@@ -80,8 +102,17 @@ def main() -> None:
     github = GitHubClient.from_env()
     if github is None:
         raise SystemExit("GITHUB_TOKEN or GitHub App credentials are required.")
+    store = None
+    if os.environ.get("NOVYX_API_KEY"):
+        store = NovyxStore(
+            NovyxConfig(
+                api_key=os.environ["NOVYX_API_KEY"],
+                api_url=os.environ.get("NOVYX_API_URL"),
+                agent_id=os.environ.get("NOVYX_AGENT_ID", "change-intelligence"),
+            )
+        )
 
-    result = sweep(github, parse_repositories(args.repositories))
+    result = sweep(github, parse_repositories(args.repositories), store=store)
     print(json.dumps(result, indent=2))
 
 
