@@ -17,10 +17,30 @@ class ServiceConfig:
     docs_root: Path
     docs_repo: Optional[str] = None
     docs_path: str = "docs"
+    ownership_rules_path: Optional[Path] = None
     webhook_secret: str = ""
     novyx_store: Optional[NovyxStore] = None
     github_client: Optional[GitHubClient] = None
     confidence_threshold: int = 60
+
+
+@dataclass
+class EventContext:
+    action: Optional[str]
+    repository: str
+    pull_request: Dict[str, object]
+    pull_request_number: int
+    head_sha: Optional[str]
+    owner: str
+    repo: str
+    installation_id: Optional[int]
+    patch: Optional[str]
+    files: List[Dict[str, object]]
+    code_files: List[Dict[str, object]]
+    docs: Optional[Sequence[Dict[str, str]]]
+    actual_docs_changed: Set[str]
+    changed_file_names: List[str]
+    query: str
 
 
 def verify_signature(secret: str, raw_body: str, header: Optional[str]) -> bool:
@@ -125,11 +145,7 @@ def build_comment(
     return "\n".join(lines)
 
 
-def process_github_event(raw_body: str, signature: Optional[str], config: ServiceConfig) -> Dict[str, object]:
-    if not verify_signature(config.webhook_secret, raw_body, signature):
-        return {"status_code": 401, "payload": {"error": "Invalid signature"}}
-
-    payload = json.loads(raw_body)
+def collect_event_context(payload: Dict[str, object], config: ServiceConfig) -> EventContext:
     action = payload.get("action")
     pull_request = payload.get("pull_request") or {}
     repository = (payload.get("repository") or {}).get("full_name") or "unknown/repo"
@@ -167,14 +183,6 @@ def process_github_event(raw_body: str, signature: Optional[str], config: Servic
         if not patch:
             patch = build_patch_from_files(code_files)
 
-    if not patch:
-        return {
-            "status_code": 400,
-            "payload": {
-                "error": "Missing patch text. Provide pull_request.patch, patch, or configure GitHub API access."
-            },
-        }
-
     actual_docs_changed = {
         normalize_doc_path(str(item["filename"]), config.docs_path)
         for item in files
@@ -188,59 +196,101 @@ def process_github_event(raw_body: str, signature: Optional[str], config: Servic
     ]
     query = f"{repository} changed modules: {', '.join(module_terms[:3])}"
 
+    return EventContext(
+        action=action,
+        repository=repository,
+        pull_request=pull_request,
+        pull_request_number=pull_request_number,
+        head_sha=head_sha,
+        owner=owner,
+        repo=repo,
+        installation_id=installation_id,
+        patch=patch,
+        files=files,
+        code_files=code_files,
+        docs=docs,
+        actual_docs_changed=actual_docs_changed,
+        changed_file_names=changed_file_names,
+        query=query,
+    )
+
+
+def run_analysis_cycle(
+    context: EventContext,
+    config: ServiceConfig,
+) -> tuple[Dict[str, object], List[Dict[str, object]], Dict[str, Dict[str, object]], Optional[Dict[str, Sequence[str]]]]:
     patterns: List[Dict[str, object]] = []
     learned_signals: Dict[str, Dict[str, object]] = {}
+
     if config.novyx_store is not None:
         try:
-            patterns = config.novyx_store.recall_patterns(query)
+            patterns = config.novyx_store.recall_patterns(context.query)
         except Exception:
             patterns = []
         try:
-            learned_signals = config.novyx_store.rank_signals(repository, changed_file_names)
+            learned_signals = config.novyx_store.rank_signals(
+                context.repository,
+                context.changed_file_names,
+            )
         except Exception:
             learned_signals = {}
 
     analysis = analyze_patch(
-        patch,
+        context.patch or "",
         docs_root=config.docs_root,
-        docs=docs,
+        docs=context.docs,
         learned_signals=learned_signals,
         patterns=patterns,
-        actual_docs_changed=actual_docs_changed if pull_request.get("merged_at") else None,
+        actual_docs_changed=context.actual_docs_changed if context.pull_request.get("merged_at") else None,
+        repository=context.repository,
+        ownership_rules_path=config.ownership_rules_path,
     )
 
     learning_feedback = None
-    if config.novyx_store is not None and pull_request.get("merged_at"):
+    if config.novyx_store is not None and context.pull_request.get("merged_at"):
         try:
             learning_feedback = config.novyx_store.learn_from_merge(
-                repository,
-                pull_request_number,
+                context.repository,
+                context.pull_request_number,
                 analysis["summary"]["changed_files"],
                 [item["relative_path"] for item in analysis["recommendations"]],
-                sorted(actual_docs_changed),
+                sorted(context.actual_docs_changed),
             )
         except Exception:
             learning_feedback = None
         try:
-            patterns = config.novyx_store.recall_patterns(query)
+            patterns = config.novyx_store.recall_patterns(context.query)
         except Exception:
-            patterns = patterns
+            pass
         try:
             learned_signals = apply_learning_feedback(
-                config.novyx_store.rank_signals(repository, changed_file_names),
+                config.novyx_store.rank_signals(context.repository, context.changed_file_names),
                 learning_feedback,
             )
         except Exception:
             learned_signals = apply_learning_feedback(learned_signals, learning_feedback)
         analysis = analyze_patch(
-            patch,
+            context.patch or "",
             docs_root=config.docs_root,
-            docs=docs,
+            docs=context.docs,
             learned_signals=learned_signals,
             patterns=patterns,
-            actual_docs_changed=actual_docs_changed,
+            actual_docs_changed=context.actual_docs_changed,
+            repository=context.repository,
+            ownership_rules_path=config.ownership_rules_path,
         )
 
+    return analysis, patterns, learned_signals, learning_feedback
+
+
+def finalize_event_response(
+    context: EventContext,
+    config: ServiceConfig,
+    analysis: Dict[str, object],
+    patterns: Sequence[Dict[str, object]],
+    learned_signals: Dict[str, Dict[str, object]],
+    learning_feedback: Optional[Dict[str, Sequence[str]]],
+) -> Dict[str, object]:
     comment_recommendations = filter_comment_recommendations(
         analysis["recommendations"],
         config.confidence_threshold,
@@ -253,48 +303,48 @@ def process_github_event(raw_body: str, signature: Optional[str], config: Servic
     if config.novyx_store is not None:
         try:
             trace = config.novyx_store.record_analysis(
-                repository,
-                pull_request_number,
+                context.repository,
+                context.pull_request_number,
                 analysis["summary"]["changed_files"],
                 analysis["recommendations"],
                 comment_suppressed=comment_suppressed,
-                head_sha=head_sha,
+                head_sha=context.head_sha,
             )
         except Exception:
             trace = None
 
     if not comment_suppressed:
         comment_body = build_comment(
-            repository,
-            pull_request_number,
+            context.repository,
+            context.pull_request_number,
             analysis["summary"],
             comment_recommendations,
             patterns,
             config.confidence_threshold,
         )
-        if config.github_client is not None and pull_request_number:
+        if config.github_client is not None and context.pull_request_number:
             comment = config.github_client.upsert_issue_comment(
-                owner,
-                repo,
-                pull_request_number,
-                installation_id,
+                context.owner,
+                context.repo,
+                context.pull_request_number,
+                context.installation_id,
                 comment_body,
             )
-    elif config.github_client is not None and pull_request_number:
+    elif config.github_client is not None and context.pull_request_number:
         comment = config.github_client.clear_issue_comment(
-            owner,
-            repo,
-            pull_request_number,
-            installation_id,
+            context.owner,
+            context.repo,
+            context.pull_request_number,
+            context.installation_id,
         )
 
     return {
         "status_code": 200,
         "payload": {
             "ok": True,
-            "action": action,
-            "repository": repository,
-            "pull_request_number": pull_request_number,
+            "action": context.action,
+            "repository": context.repository,
+            "pull_request_number": context.pull_request_number,
             "summary": analysis["summary"],
             "recommendations": analysis["recommendations"],
             "historical_patterns": patterns,
@@ -307,3 +357,29 @@ def process_github_event(raw_body: str, signature: Optional[str], config: Servic
             "confidence_threshold": config.confidence_threshold,
         },
     }
+
+
+def process_github_event(raw_body: str, signature: Optional[str], config: ServiceConfig) -> Dict[str, object]:
+    if not verify_signature(config.webhook_secret, raw_body, signature):
+        return {"status_code": 401, "payload": {"error": "Invalid signature"}}
+
+    payload = json.loads(raw_body)
+    context = collect_event_context(payload, config)
+
+    if not context.patch:
+        return {
+            "status_code": 400,
+            "payload": {
+                "error": "Missing patch text. Provide pull_request.patch, patch, or configure GitHub API access."
+            },
+        }
+
+    analysis, patterns, learned_signals, learning_feedback = run_analysis_cycle(context, config)
+    return finalize_event_response(
+        context,
+        config,
+        analysis,
+        patterns,
+        learned_signals,
+        learning_feedback,
+    )

@@ -5,6 +5,9 @@ from pathlib import Path
 import re
 from typing import Dict, Iterable, List, Optional, Sequence, Set
 
+from .ownership import build_ownership_signals
+from .surface_map import doc_surface_matches, extract_surfaces
+
 
 TOKEN_SPLIT = re.compile(r"[^A-Za-z0-9]+")
 DOC_PATH_PATTERN = re.compile(r"([A-Za-z0-9_./-]+\.(?:md|mdx|txt))", re.IGNORECASE)
@@ -76,6 +79,7 @@ class DiffSummary:
     files: List[ChangedFile]
     symbols: Set[str]
     added_identifiers: List[str]
+    surfaces: List[str]
 
 
 @dataclass
@@ -85,6 +89,7 @@ class DocIndex:
     headings: List[str]
     content: str
     tokens: Set[str]
+    surfaces: Set[str]
 
 
 def extract_symbols(line: str) -> Set[str]:
@@ -99,6 +104,7 @@ def parse_unified_diff(diff_text: str) -> DiffSummary:
     files: List[ChangedFile] = []
     symbols: Set[str] = set()
     added_identifiers: List[str] = []
+    surfaces: List[str] = []
     current: Dict[str, object] | None = None
 
     for line in diff_text.splitlines():
@@ -125,17 +131,24 @@ def parse_unified_diff(diff_text: str) -> DiffSummary:
             line_symbols = extract_symbols(stripped)
             symbols.update(line_symbols)
             added_identifiers.extend(sorted(line_symbols))
+            surfaces.extend(extract_surfaces([stripped]))
             continue
 
         if line.startswith("-") and not line.startswith("---"):
             stripped = line[1:]
             current["removed_lines"].append(stripped)
             symbols.update(extract_symbols(stripped))
+            surfaces.extend(extract_surfaces([stripped]))
 
     if current is not None:
         files.append(finalize_file(current))
 
-    return DiffSummary(files=files, symbols=symbols, added_identifiers=list(dict.fromkeys(added_identifiers)))
+    return DiffSummary(
+        files=files,
+        symbols=symbols,
+        added_identifiers=list(dict.fromkeys(added_identifiers)),
+        surfaces=list(dict.fromkeys(surfaces)),
+    )
 
 
 def finalize_file(raw_file: Dict[str, object]) -> ChangedFile:
@@ -200,6 +213,7 @@ def index_doc_blobs(raw_docs: Sequence[Dict[str, str]]) -> List[DocIndex]:
                 headings=headings,
                 content=content,
                 tokens=tokens,
+                surfaces=doc_surface_matches(content, headings),
             )
         )
     return docs
@@ -219,6 +233,13 @@ def top_overlap(tokens: Iterable[str], doc_tokens: Set[str], limit: int = 5) -> 
 
 def build_focus_areas(doc: DocIndex, diff: DiffSummary) -> List[str]:
     focus: List[str] = []
+    matching_surfaces = [surface for surface in diff.surfaces if surface in doc.surfaces]
+    if matching_surfaces:
+        focus.append(
+            "Review sections covering routes and APIs: "
+            + ", ".join(matching_surfaces[:3])
+            + "."
+        )
     for changed_file in diff.files:
         overlapping_terms = top_overlap(changed_file.content_tokens, doc.tokens, limit=4)
         if not overlapping_terms:
@@ -333,17 +354,25 @@ def build_draft_patch(doc: DocIndex, diff: DiffSummary, recommendation: Dict[str
         else:
             lines.append("+ Update references to: " + ", ".join(f"`{item}`" for item in changed_symbols[:8]) + ".")
 
+    proposed_changes = [
+        (
+            f"Document the new tool `{symbol}`."
+            if is_reference_expansion(diff)
+            else f"Update documentation for `{symbol}`."
+        )
+        for symbol in changed_symbols[:8]
+    ][:6]
+    if diff.surfaces:
+        proposed_changes.append(
+            "Confirm the documented route and API behavior for "
+            + ", ".join(f"`{item}`" for item in diff.surfaces[:3])
+            + "."
+        )
+
     return {
         "target_heading": target_heading,
         "summary": f"Update `{target_heading}` to reflect the code changes in this PR.",
-        "proposed_changes": [
-            (
-                f"Document the new tool `{symbol}`."
-                if is_reference_expansion(diff)
-                else f"Update documentation for `{symbol}`."
-            )
-            for symbol in changed_symbols[:8]
-        ][:6],
+        "proposed_changes": proposed_changes[:6],
         "patch_preview": "\n".join(lines),
         "confidence_gate": recommendation["confidence"] >= 60,
     }
@@ -355,6 +384,7 @@ def score_document(
     learned_signals: Dict[str, Dict[str, object]],
     pattern_doc_hits: Dict[str, int],
     actual_docs_changed: Set[str],
+    ownership_signal: Optional[Dict[str, object]] = None,
 ) -> Dict[str, object]:
     score = 0
     evidence: List[str] = []
@@ -385,9 +415,14 @@ def score_document(
         if symbol.lower() in doc.content.lower()
         or any(symbol.lower() in heading.lower() for heading in doc.headings)
     ]
+    matching_surfaces = [surface for surface in diff.surfaces if surface in doc.surfaces]
     if matching_symbols:
         score += len(matching_symbols) * 20
         evidence.append("Mentions changed symbols: " + ", ".join(matching_symbols[:5]))
+
+    if matching_surfaces:
+        score += len(matching_surfaces) * 34
+        evidence.append("Mentions changed routes or APIs: " + ", ".join(matching_surfaces[:4]))
 
     if domain_overlap:
         score += len(domain_overlap) * 28
@@ -420,6 +455,25 @@ def score_document(
     if pattern_hits:
         score += pattern_hits * 8
         evidence.append(f"Historical change-pattern memories referenced `{doc.relative_path}` ({pattern_hits} matches)")
+
+    ownership_boost = int((ownership_signal or {}).get("score_boost", 0) or 0)
+    if ownership_boost:
+        score += ownership_boost
+        code_prefixes = ", ".join((ownership_signal or {}).get("matched_code_prefixes", [])[:2])
+        doc_prefixes = ", ".join((ownership_signal or {}).get("matched_doc_prefixes", [])[:2])
+        matched_files = ", ".join((ownership_signal or {}).get("matched_files", [])[:2])
+        evidence_line = (
+            "Ownership rule matched "
+            + (f"`{code_prefixes}`" if code_prefixes else "configured code prefixes")
+            + " -> "
+            + (f"`{doc_prefixes}`" if doc_prefixes else "configured doc prefixes")
+        )
+        if matched_files:
+            evidence_line += f" for {matched_files}"
+        descriptions = (ownership_signal or {}).get("descriptions", [])
+        if descriptions:
+            evidence_line += f" ({descriptions[0]})"
+        evidence.append(evidence_line)
 
     if doc.relative_path in actual_docs_changed or Path(doc.relative_path).name in actual_docs_changed:
         score += 30
@@ -457,11 +511,19 @@ def rank_documents(
     learned_signals: Optional[Dict[str, Dict[str, object]]] = None,
     patterns: Optional[Sequence[Dict[str, object]]] = None,
     actual_docs_changed: Optional[Set[str]] = None,
+    repository: Optional[str] = None,
+    ownership_rules_path: Optional[Path] = None,
 ) -> List[Dict[str, object]]:
     recommendations: List[Dict[str, object]] = []
     learned_signals = learned_signals or {}
     pattern_doc_hits = extract_docs_from_patterns(patterns or [])
     actual_docs_changed = actual_docs_changed or set()
+    ownership_signals = build_ownership_signals(
+        repository,
+        [item.path for item in diff.files],
+        [item.relative_path for item in docs],
+        rules_path=ownership_rules_path,
+    )
 
     for doc in docs:
         recommendation = score_document(
@@ -470,6 +532,7 @@ def rank_documents(
             learned_signals,
             pattern_doc_hits,
             actual_docs_changed,
+            ownership_signal=ownership_signals.get(doc.relative_path),
         )
 
         if recommendation["score"] <= 0:
@@ -513,6 +576,7 @@ def render_markdown(summary: Dict[str, object], recommendations: Sequence[Dict[s
         "",
         f"- Changed files: {len(summary['changed_files'])}",
         f"- Changed symbols: {len(summary['changed_symbols'])}",
+        f"- Changed routes/APIs: {len(summary.get('changed_surfaces', []))}",
         f"- Docs analyzed: {summary['docs_analyzed']}",
         f"- Recommended docs updates: {len(recommendations)}",
         "",
@@ -524,6 +588,9 @@ def render_markdown(summary: Dict[str, object], recommendations: Sequence[Dict[s
     lines.extend(["", "## Changed Symbols", ""])
     for symbol in summary["changed_symbols"]:
         lines.append(f"- `{symbol}`")
+    lines.extend(["", "## Changed Routes/APIs", ""])
+    for surface in summary.get("changed_surfaces", []):
+        lines.append(f"- `{surface}`")
     lines.extend(["", "## Recommended Docs", ""])
     if not recommendations:
         lines.append("No affected docs were detected from the current inputs.")
@@ -552,6 +619,8 @@ def analyze_patch(
     learned_signals: Optional[Dict[str, Dict[str, object]]] = None,
     patterns: Optional[Sequence[Dict[str, object]]] = None,
     actual_docs_changed: Optional[Set[str]] = None,
+    repository: Optional[str] = None,
+    ownership_rules_path: Optional[Path] = None,
 ) -> Dict[str, object]:
     diff = parse_unified_diff(diff_text)
     indexed_docs = index_doc_blobs(docs) if docs is not None else index_docs(docs_root)
@@ -561,10 +630,13 @@ def analyze_patch(
         learned_signals=learned_signals,
         patterns=patterns,
         actual_docs_changed=actual_docs_changed,
+        repository=repository,
+        ownership_rules_path=ownership_rules_path,
     )
     summary = {
         "changed_files": [item.path for item in diff.files],
         "changed_symbols": sorted(diff.symbols),
+        "changed_surfaces": diff.surfaces,
         "docs_analyzed": len(indexed_docs),
     }
     return {

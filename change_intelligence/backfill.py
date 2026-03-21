@@ -118,6 +118,7 @@ def seed_examples(
             learned_signals=store.rank_signals(repository, changed_files),
             patterns=store.recall_patterns(query),
             actual_docs_changed={Path(path).name for path in actual_docs} if actual_docs else None,
+            repository=repository,
         )
 
         synthetic_pr = int(seed.get("synthetic_pull_request_number") or (900000 + index))

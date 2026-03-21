@@ -1,4 +1,5 @@
 import json
+import tempfile
 from pathlib import Path
 import unittest
 
@@ -205,6 +206,159 @@ class ChangeIntelligenceServiceTests(unittest.TestCase):
             ServiceConfig(docs_root=FIXTURES / "repo" / "docs", webhook_secret="secret"),
         )
         self.assertEqual(result["status_code"], 401)
+
+    def test_missing_patch_without_github_access_returns_bad_request(self):
+        body = json.dumps(
+            {
+                "action": "opened",
+                "repository": {"full_name": "acme/app"},
+                "pull_request": {"number": 42},
+            }
+        )
+        result = process_github_event(
+            body,
+            None,
+            ServiceConfig(docs_root=FIXTURES / "repo" / "docs"),
+        )
+        self.assertEqual(result["status_code"], 400)
+
+    def test_process_github_event_applies_repository_ownership_rules(self):
+        patch = """diff --git a/src/billing/retries.py b/src/billing/retries.py
+index 1111111..2222222 100644
+--- a/src/billing/retries.py
++++ b/src/billing/retries.py
+@@ -0,0 +1,2 @@
++def sync_invoice_retry_window():
++    return True
+"""
+
+        class OwnershipGitHubClient(FakeGitHubClient):
+            def repo_docs(self, owner, repo, docs_path, ref, installation_id):
+                self.docs_requests.append((owner, repo, docs_path, ref, installation_id))
+                return [
+                    {
+                        "path": "docs/billing.md",
+                        "relative_path": "billing.md",
+                        "content": "# Billing\n\nOverview of invoices and retry policy.",
+                    },
+                    {
+                        "path": "docs/ops.md",
+                        "relative_path": "ops.md",
+                        "content": "# Operations\n\n## sync_invoice_retry_window\n\nThis worker updates the retry window.",
+                    },
+                ]
+
+            def pull_request_files(self, owner, repo, pull_number, installation_id):
+                self.file_requests.append((owner, repo, pull_number, installation_id))
+                return [
+                    {
+                        "filename": "src/billing/retries.py",
+                        "patch": "\n".join(patch.splitlines()[4:]),
+                    }
+                ]
+
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
+            json.dump(
+                {
+                    "repositories": {
+                        "acme/app": [
+                            {
+                                "code_prefix": "src/billing/",
+                                "doc_prefix": "billing.md",
+                                "score_boost": 32,
+                                "description": "Billing code should update the billing guide.",
+                            }
+                        ]
+                    }
+                },
+                handle,
+            )
+            rules_path = Path(handle.name)
+        self.addCleanup(lambda: rules_path.unlink(missing_ok=True))
+
+        body = json.dumps(
+            {
+                "action": "opened",
+                "repository": {"full_name": "acme/app"},
+                "pull_request": {"number": 42, "patch": patch},
+            }
+        )
+        github_client = OwnershipGitHubClient(patch)
+        result = process_github_event(
+            body,
+            None,
+            ServiceConfig(
+                docs_root=FIXTURES / "repo" / "docs",
+                github_client=github_client,
+                confidence_threshold=60,
+                ownership_rules_path=rules_path,
+            ),
+        )
+
+        self.assertEqual(result["status_code"], 200)
+        self.assertEqual(result["payload"]["recommendations"][0]["relative_path"], "billing.md")
+        self.assertTrue(
+            any("Ownership rule matched" in line for line in result["payload"]["recommendations"][0]["evidence"])
+        )
+
+    def test_process_github_event_reports_changed_routes_and_prefers_surface_docs(self):
+        patch = """diff --git a/src/api/search.py b/src/api/search.py
+index 1111111..2222222 100644
+--- a/src/api/search.py
++++ b/src/api/search.py
+@@ -10,0 +11,4 @@
++@router.get("/v1/search")
++def search():
++    pass
++app.post("/v1/search/reindex")
+"""
+
+        class SurfaceGitHubClient(FakeGitHubClient):
+            def repo_docs(self, owner, repo, docs_path, ref, installation_id):
+                self.docs_requests.append((owner, repo, docs_path, ref, installation_id))
+                return [
+                    {
+                        "path": "docs/search-reference.md",
+                        "relative_path": "search-reference.md",
+                        "content": "# Search API\n\n## GET /v1/search\n\nUse `/v1/search`.\n\n## POST /v1/search/reindex\n\nRebuild the index.",
+                    },
+                    {
+                        "path": "docs/search-overview.md",
+                        "relative_path": "search-overview.md",
+                        "content": "# Search Overview\n\nThis guide explains search internals.",
+                    },
+                ]
+
+            def pull_request_files(self, owner, repo, pull_number, installation_id):
+                self.file_requests.append((owner, repo, pull_number, installation_id))
+                return [
+                    {
+                        "filename": "src/api/search.py",
+                        "patch": "\n".join(patch.splitlines()[4:]),
+                    }
+                ]
+
+        body = json.dumps(
+            {
+                "action": "opened",
+                "repository": {"full_name": "acme/app"},
+                "pull_request": {"number": 42, "patch": patch},
+            }
+        )
+        github_client = SurfaceGitHubClient(patch)
+        result = process_github_event(
+            body,
+            None,
+            ServiceConfig(
+                docs_root=FIXTURES / "repo" / "docs",
+                github_client=github_client,
+                confidence_threshold=60,
+            ),
+        )
+
+        self.assertEqual(result["status_code"], 200)
+        self.assertEqual(result["payload"]["summary"]["changed_surfaces"], ["/v1/search", "/v1/search/reindex"])
+        self.assertEqual(result["payload"]["recommendations"][0]["relative_path"], "search-reference.md")
 
 
 if __name__ == "__main__":

@@ -8,12 +8,14 @@ The first job is narrow and useful:
 
 This repo follows the useful part of the `gstack` pattern: a constrained workflow, explicit specialist output, and docs tied directly to source changes instead of vague "AI docs" promises.
 
-The Python service under `change_intelligence/` is the primary runtime. The earlier Node prototype remains in `src/` as a reference implementation of the same detection logic.
+The Python service under `change_intelligence/` is the only production runtime.
+The earlier Node implementation in `src/` remains as a reference CLI and fixture harness for the ranking logic, not as a deployed server.
 
 ## What It Does
 
 - Reads a unified git diff or patch file
 - Extracts changed files and changed symbols
+- Extracts changed routes and API surfaces from diff lines
 - Scans a docs tree for matching headings and terminology
 - Ranks the most likely docs pages affected
 - Generates a markdown report with evidence, confidence scores, and draft patch suggestions
@@ -32,29 +34,46 @@ Most repos can generate docs. Fewer can tell you which docs are now stale and wh
 
 ## Usage
 
-Analyze a patch file:
+Install the production runtime and test tooling:
 
 ```bash
-node ./src/cli.js --diff ./test/fixtures/sample.patch --docs ./test/fixtures/repo/docs --code ./test/fixtures/repo/src
-```
-
-Analyze the current git working tree from a repo:
-
-```bash
-node ./src/cli.js --repo /path/to/repo --docs /path/to/repo/docs
-```
-
-Emit JSON:
-
-```bash
-node ./src/cli.js --diff ./change.patch --docs ./docs --json
+python3 -m venv .venv
+.venv/bin/pip install -e '.[dev]'
 ```
 
 Run the Python webhook service:
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install .
+.venv/bin/python -m change_intelligence.server
+```
+
+Run the full test suite:
+
+```bash
+npm test
+```
+
+Analyze a patch file with the reference Node CLI:
+
+```bash
+node ./src/cli.js --diff ./test/fixtures/sample.patch --docs ./test/fixtures/repo/docs --code ./test/fixtures/repo/src
+```
+
+Analyze the current git working tree from a repo with the reference Node CLI:
+
+```bash
+node ./src/cli.js --repo /path/to/repo --docs /path/to/repo/docs
+```
+
+Emit JSON with the reference Node CLI:
+
+```bash
+node ./src/cli.js --diff ./change.patch --docs ./docs --json
+```
+
+Run the production server with credentials:
+
+```bash
 GITHUB_WEBHOOK_SECRET=dev-secret NOVYX_API_KEY=nram_your_key GITHUB_TOKEN=ghp_your_token .venv/bin/python -m change_intelligence.server
 ```
 
@@ -66,6 +85,7 @@ The markdown report includes:
 - extracted symbols
 - ranked affected docs
 - evidence for each match
+- exact route/API surface matches when present
 - recommended update focus areas
 
 ## GitHub App Wrapper
@@ -110,8 +130,15 @@ GitHub auth options:
 Optional configuration:
 
 - `DOCS_PATH` to change the docs folder fetched from GitHub, default `docs`
+- `DOC_OWNERSHIP_RULES_PATH` to override the repository-to-doc ownership rules file, default `change_intelligence/seeds/doc_ownership.json`
 - `GITHUB_API_URL` for GitHub Enterprise or testing
 - `CONFIDENCE_THRESHOLD` to tune when the app comments, default `60`
+
+Doc ownership rules:
+
+- ownership rules map repository-specific code prefixes to docs prefixes
+- matching rules add deterministic ranking weight and explicit evidence to recommendations
+- the default rules file ships at `change_intelligence/seeds/doc_ownership.json`
 
 Reference monitoring plan:
 
