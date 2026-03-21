@@ -46,6 +46,7 @@ def build_config() -> ServiceConfig:
     docs_root = Path(os.environ.get("DOCS_ROOT", "docs")).resolve()
     docs_repo = os.environ.get("DOCS_REPO")
     docs_path = os.environ.get("DOCS_PATH", "docs")
+    ownership_rules_path = os.environ.get("DOC_OWNERSHIP_RULES_PATH")
     confidence_threshold = int(os.environ.get("CONFIDENCE_THRESHOLD", "60"))
     webhook_secret = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
     novyx_key = os.environ.get("NOVYX_API_KEY")
@@ -65,6 +66,7 @@ def build_config() -> ServiceConfig:
         docs_root=docs_root,
         docs_repo=docs_repo,
         docs_path=docs_path,
+        ownership_rules_path=Path(ownership_rules_path).resolve() if ownership_rules_path else None,
         webhook_secret=webhook_secret,
         novyx_store=store,
         github_client=github_client,

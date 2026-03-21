@@ -4,8 +4,12 @@ from dataclasses import dataclass
 import os
 from typing import Dict, List, Optional, Sequence
 
-import jwt
 import requests
+
+try:
+    import jwt
+except ImportError:  # pragma: no cover - exercised only in minimal test envs.
+    jwt = None
 
 
 COMMENT_MARKER = "<!-- change-intelligence-comment -->"
@@ -72,6 +76,8 @@ class GitHubClient:
     def _app_jwt(self) -> str:
         if not self.config.app_id or not self.config.private_key:
             raise ValueError("GitHub App credentials are not configured.")
+        if jwt is None:
+            raise RuntimeError("PyJWT is required for GitHub App authentication. Install change-intelligence-app[dev].")
         return jwt.encode(
             {
                 "iat": int(__import__("time").time()) - 60,

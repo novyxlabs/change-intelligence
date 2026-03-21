@@ -13,5 +13,10 @@ dependencies = [
   "PyJWT[crypto]>=2.8.0"
 ]
 
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0"
+]
+
 [tool.setuptools]
 packages = ["change_intelligence"]
