@@ -19,6 +19,7 @@ The earlier Node implementation in `src/` remains as a reference CLI and fixture
 - Scans a docs tree for matching headings and terminology
 - Ranks the most likely docs pages affected
 - Generates a markdown report with evidence, confidence scores, and draft patch suggestions
+- Generates a structured release-note draft when recommendation confidence is strong
 - Stores patterns, triples, and audit traces in Novyx so the system gets smarter over time
 - Emits the same result as JSON for GitHub webhook integration
 
@@ -87,6 +88,7 @@ The markdown report includes:
 - evidence for each match
 - exact route/API surface matches when present
 - recommended update focus areas
+- release-note draft when confidence clears the threshold
 
 ## GitHub App Wrapper
 

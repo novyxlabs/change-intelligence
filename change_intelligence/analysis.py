@@ -612,6 +612,67 @@ def render_markdown(summary: Dict[str, object], recommendations: Sequence[Dict[s
     return "\n".join(lines).rstrip()
 
 
+def build_release_notes(summary: Dict[str, object], diff: DiffSummary, recommendations: Sequence[Dict[str, object]]) -> Dict[str, object]:
+    top = recommendations[0] if recommendations else {}
+    top_confidence = int(top.get("confidence", 0) or 0)
+    affected_surfaces = diff.surfaces[:5]
+    changed_symbols = summary["changed_symbols"][:5]
+    recommended_docs = [item["relative_path"] for item in recommendations[:3]]
+    included = top_confidence >= 60 and bool(recommendations)
+
+    if affected_surfaces:
+        title = f"Update {' and '.join(affected_surfaces[:2])}"
+    elif changed_symbols:
+        title = f"Update {', '.join(changed_symbols[:2])}"
+    elif summary["changed_files"]:
+        title = f"Update {Path(summary['changed_files'][0]).stem}"
+    else:
+        title = "Product update"
+
+    bullets: List[str] = []
+    if affected_surfaces:
+        bullets.append("Adjusted route or API behavior for " + ", ".join(f"`{item}`" for item in affected_surfaces[:3]) + ".")
+    if changed_symbols:
+        bullets.append("Touched implementation symbols: " + ", ".join(f"`{item}`" for item in changed_symbols[:4]) + ".")
+    if recommended_docs:
+        bullets.append("Documentation likely needs updates in " + ", ".join(f"`{item}`" for item in recommended_docs) + ".")
+    if not bullets and summary["changed_files"]:
+        bullets.append("Updated code paths: " + ", ".join(f"`{item}`" for item in summary["changed_files"][:3]) + ".")
+
+    return {
+        "title": title,
+        "summary": bullets[0] if bullets else "Product behavior changed in this PR.",
+        "bullets": bullets[:3],
+        "affected_surfaces": affected_surfaces,
+        "recommended_docs": recommended_docs,
+        "confidence": top_confidence,
+        "included_in_report": included,
+        "suppressed_reason": None if included else "Top recommendation confidence below release-note threshold.",
+    }
+
+
+def render_report(
+    summary: Dict[str, object],
+    recommendations: Sequence[Dict[str, object]],
+    release_notes: Dict[str, object],
+) -> str:
+    base = render_markdown(summary, recommendations)
+    if not release_notes.get("included_in_report"):
+        return base
+
+    lines = [
+        base,
+        "",
+        "## Release Notes Draft",
+        "",
+        f"Title: **{release_notes['title']}**",
+        "",
+    ]
+    for bullet in release_notes.get("bullets", []):
+        lines.append(f"- {bullet}")
+    return "\n".join(lines).rstrip()
+
+
 def analyze_patch(
     diff_text: str,
     docs_root: Optional[Path] = None,
@@ -639,8 +700,10 @@ def analyze_patch(
         "changed_surfaces": diff.surfaces,
         "docs_analyzed": len(indexed_docs),
     }
+    release_notes = build_release_notes(summary, diff, recommendations)
     return {
         "summary": summary,
         "recommendations": recommendations,
-        "markdown": render_markdown(summary, recommendations),
+        "release_notes": release_notes,
+        "markdown": render_report(summary, recommendations, release_notes),
     }

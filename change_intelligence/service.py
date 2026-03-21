@@ -347,6 +347,7 @@ def finalize_event_response(
             "pull_request_number": context.pull_request_number,
             "summary": analysis["summary"],
             "recommendations": analysis["recommendations"],
+            "release_notes": analysis["release_notes"],
             "historical_patterns": patterns,
             "learned_signals": learned_signals,
             "learning_feedback": learning_feedback,
