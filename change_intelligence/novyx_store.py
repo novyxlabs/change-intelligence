@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import inspect
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
@@ -21,13 +22,19 @@ class NovyxConfig:
 class NovyxStore:
     def __init__(self, config: NovyxConfig, client: Optional[Novyx] = None):
         self.config = config
-        self.client = client or Novyx(
-            api_key=config.api_key,
-            api_url=config.api_url or "https://novyx-ram-api.fly.dev",
-            agent_id=config.agent_id,
-            source=config.source,
-        )
+        self.client = client or self._build_client(config)
         self._space_id: Optional[str] = None
+
+    def _build_client(self, config: NovyxConfig) -> Novyx:
+        kwargs = {
+            "api_key": config.api_key,
+            "api_url": config.api_url or "https://novyx-ram-api.fly.dev",
+            "agent_id": config.agent_id,
+        }
+        parameters = inspect.signature(Novyx).parameters
+        if "source" in parameters:
+            kwargs["source"] = config.source
+        return Novyx(**kwargs)
 
     def recall_patterns(self, query: str, limit: int = 5) -> List[Dict[str, object]]:
         results = self.client.recall(
