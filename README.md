@@ -83,6 +83,7 @@ Dashboard endpoints:
 - `GET /dashboard` returns a read-only internal HTML dashboard
 - `GET /api/dashboard` returns the same operational view as JSON
 - both surfaces expose aggregate KPIs, proof-window progress, recent analysis runs, recent feedback, and explicit Novyx partial-failure errors
+- set `DASHBOARD_SECRET` to require the `X-Dashboard-Secret` header on both routes
 
 ## Output
 

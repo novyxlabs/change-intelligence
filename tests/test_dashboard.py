@@ -1,6 +1,8 @@
 import json
 import unittest
 from io import BytesIO
+from types import SimpleNamespace
+from typing import Optional
 
 from change_intelligence.dashboard import build_dashboard_payload, render_dashboard_html
 from change_intelligence.server import AppHandler
@@ -89,11 +91,12 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("billing.md", html)
 
     def test_server_serves_dashboard_json_and_html(self):
-        def invoke(path: str) -> tuple[int, dict[str, str], bytes]:
+        def invoke(path: str, dashboard_secret: str = "", provided_secret: Optional[str] = None) -> tuple[int, dict[str, str], bytes]:
             handler = AppHandler.__new__(AppHandler)
             handler.path = path
-            handler.config = ServiceConfig(docs_root=".", novyx_store=FakeStore())
+            handler.config = ServiceConfig(docs_root=".", novyx_store=FakeStore(), dashboard_secret=dashboard_secret)
             handler.wfile = BytesIO()
+            handler.headers = SimpleNamespace(get=lambda key, default=None: provided_secret if key == "X-Dashboard-Secret" else default)
             status = {"code": None}
             headers: dict[str, str] = {}
             handler.send_response = lambda code: status.__setitem__("code", code)
@@ -113,6 +116,34 @@ class DashboardTests(unittest.TestCase):
         html = body.decode("utf8")
         self.assertIn("text/html", headers["Content-Type"])
         self.assertIn("Recent Feedback", html)
+
+    def test_server_rejects_dashboard_without_secret_header(self):
+        def invoke(path: str, provided_secret: Optional[str] = None) -> tuple[int, dict[str, str], bytes]:
+            handler = AppHandler.__new__(AppHandler)
+            handler.path = path
+            handler.config = ServiceConfig(docs_root=".", novyx_store=FakeStore(), dashboard_secret="top-secret")
+            handler.wfile = BytesIO()
+            handler.headers = SimpleNamespace(get=lambda key, default=None: provided_secret if key == "X-Dashboard-Secret" else default)
+            status = {"code": None}
+            headers: dict[str, str] = {}
+            handler.send_response = lambda code: status.__setitem__("code", code)
+            handler.send_header = lambda key, value: headers.__setitem__(key, value)
+            handler.end_headers = lambda: None
+            handler.do_GET()
+            return status["code"], headers, handler.wfile.getvalue()
+
+        status, headers, body = invoke("/api/dashboard")
+        self.assertEqual(status, 401)
+        self.assertIn("application/json", headers["Content-Type"])
+        self.assertEqual(json.loads(body.decode("utf8"))["error"], "Unauthorized")
+
+        status, _, _ = invoke("/dashboard")
+        self.assertEqual(status, 401)
+
+        status, headers, body = invoke("/api/dashboard", provided_secret="top-secret")
+        self.assertEqual(status, 200)
+        self.assertIn("application/json", headers["Content-Type"])
+        self.assertEqual(json.loads(body.decode("utf8"))["recent_runs"][0]["top_doc"], "billing.md")
 
 
 if __name__ == "__main__":

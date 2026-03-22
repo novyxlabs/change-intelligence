@@ -30,14 +30,27 @@ class AppHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _dashboard_authorized(self) -> bool:
+        secret = self.config.dashboard_secret
+        if not secret:
+            return True
+        provided = self.headers.get("X-Dashboard-Secret")
+        return provided == secret
+
     def do_GET(self):
         if self.path == "/health":
             self._json(200, {"ok": True})
             return
         if self.path == "/api/dashboard":
+            if not self._dashboard_authorized():
+                self._json(401, {"error": "Unauthorized"})
+                return
             self._json(200, build_dashboard_payload(self.config.novyx_store))
             return
         if self.path == "/dashboard":
+            if not self._dashboard_authorized():
+                self._json(401, {"error": "Unauthorized"})
+                return
             payload = build_dashboard_payload(self.config.novyx_store)
             self._html(200, render_dashboard_html(payload))
             return
@@ -65,6 +78,7 @@ def build_config() -> ServiceConfig:
     ownership_rules_path = os.environ.get("DOC_OWNERSHIP_RULES_PATH")
     confidence_threshold = int(os.environ.get("CONFIDENCE_THRESHOLD", "60"))
     webhook_secret = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
+    dashboard_secret = os.environ.get("DASHBOARD_SECRET", "")
     novyx_key = os.environ.get("NOVYX_API_KEY")
     novyx_url = os.environ.get("NOVYX_API_URL")
     novyx_agent_id = os.environ.get("NOVYX_AGENT_ID", "change-intelligence")
@@ -84,6 +98,7 @@ def build_config() -> ServiceConfig:
         docs_path=docs_path,
         ownership_rules_path=Path(ownership_rules_path).resolve() if ownership_rules_path else None,
         webhook_secret=webhook_secret,
+        dashboard_secret=dashboard_secret,
         novyx_store=store,
         github_client=github_client,
         confidence_threshold=confidence_threshold,

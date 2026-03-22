@@ -19,6 +19,7 @@ class ServiceConfig:
     docs_path: str = "docs"
     ownership_rules_path: Optional[Path] = None
     webhook_secret: str = ""
+    dashboard_secret: str = ""
     novyx_store: Optional[NovyxStore] = None
     github_client: Optional[GitHubClient] = None
     confidence_threshold: int = 60
