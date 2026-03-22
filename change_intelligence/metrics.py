@@ -82,6 +82,56 @@ def compute_metrics(store: NovyxStore, limit: int = 500) -> dict[str, object]:
     runs = store.list_memories(["analysis-run"], limit=limit)
 
     metrics = summarize(feedback, runs)
+    metrics["novyx"] = {
+        "eval": {},
+        "audit": {},
+    }
+
+    if hasattr(store, "evaluation_history"):
+        try:
+            history = store.evaluation_history(limit=10)
+        except Exception as error:
+            history = {}
+            metrics["novyx"]["eval"]["history_error"] = str(error)
+        if isinstance(history, dict):
+            entries = history.get("history") or history.get("items") or history.get("results") or []
+            metrics["novyx"]["eval"]["history_count"] = len(entries) if isinstance(entries, list) else 0
+            if isinstance(entries, list) and entries:
+                latest = entries[0] if isinstance(entries[0], dict) else {}
+                if isinstance(latest, dict):
+                    metrics["novyx"]["eval"]["latest"] = latest
+    else:
+        metrics["novyx"]["eval"]["history_unavailable"] = True
+
+    if hasattr(store, "evaluation_drift"):
+        try:
+            drift = store.evaluation_drift(days=7)
+        except Exception as error:
+            drift = {}
+            metrics["novyx"]["eval"]["drift_error"] = str(error)
+        if isinstance(drift, dict):
+            metrics["novyx"]["eval"]["drift"] = drift
+    else:
+        metrics["novyx"]["eval"]["drift_unavailable"] = True
+
+    if hasattr(store, "feedback_audit"):
+        try:
+            audit_entries = store.feedback_audit(limit=min(limit, 100))
+        except Exception as error:
+            audit_entries = []
+            metrics["novyx"]["audit"]["error"] = str(error)
+        if isinstance(audit_entries, list):
+            metrics["novyx"]["audit"] = {
+                "entry_count": len(audit_entries),
+                "create_operations": sum(
+                    1 for item in audit_entries
+                    if isinstance(item, dict) and str(item.get("operation") or "").upper() == "CREATE"
+                ),
+                "latest_entry": audit_entries[0] if audit_entries else None,
+                **({"error": metrics["novyx"]["audit"]["error"]} if "error" in metrics["novyx"]["audit"] else {}),
+            }
+    else:
+        metrics["novyx"]["audit"]["unavailable"] = True
 
     repositories = sorted({repository_for(item) for item in [*feedback, *runs]})
     metrics["repositories"] = {}

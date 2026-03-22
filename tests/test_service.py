@@ -55,7 +55,11 @@ class FakeNovyxStore:
         self.calls.append(
             ("record", repository, pull_request_number, list(changed_files), len(recommendations), kwargs)
         )
-        return {"trace_id": "trace_123"}
+        return {
+            "trace_id": "trace_123",
+            "evaluation": {"health_score": 98, "drift_score": 0.02},
+            "audit_entries": [{"operation": "CREATE", "artifact_id": "mem_run_1"}],
+        }
 
 
 class FakeGitHubClient:
@@ -159,7 +163,12 @@ class ChangeIntelligenceServiceTests(unittest.TestCase):
         self.assertGreaterEqual(result["payload"]["recommendations"][0]["confidence"], 60)
         self.assertEqual(result["payload"]["learning_feedback"]["accepted"], ["billing.md"])
         self.assertTrue(any(call[0] == "learn" for call in store.calls))
+        record_call = next(call for call in store.calls if call[0] == "record")
+        self.assertEqual(record_call[5]["action"], "closed")
+        self.assertEqual(record_call[5]["release_notes"]["recommended_docs"][0], "billing.md")
+        self.assertEqual(record_call[5]["release_notes"]["confidence"], result["payload"]["release_notes"]["confidence"])
         self.assertEqual(github_client.comments[0][2], 42)
+        self.assertEqual(result["payload"]["trace"]["evaluation"]["health_score"], 98)
 
     def test_process_github_event_stays_silent_below_threshold(self):
         patch = (FIXTURES / "sample.patch").read_text(encoding="utf8")

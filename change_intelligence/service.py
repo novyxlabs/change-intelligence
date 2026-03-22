@@ -309,6 +309,12 @@ def finalize_event_response(
                 analysis["recommendations"],
                 comment_suppressed=comment_suppressed,
                 head_sha=context.head_sha,
+                action=context.action,
+                patterns=patterns,
+                learned_signals=learned_signals,
+                learning_feedback=learning_feedback,
+                release_notes=analysis["release_notes"],
+                summary=analysis["summary"],
             )
         except Exception:
             trace = None

@@ -8,6 +8,13 @@ class FakeStore:
     def __init__(self, feedback, runs):
         self.feedback = feedback
         self.runs = runs
+        self.audit_entries = [
+            {"operation": "CREATE", "artifact_id": "mem_feedback_1", "timestamp": "2026-03-18T12:00:00Z"}
+        ]
+        self.eval_history_payload = {
+            "history": [{"health_score": 97, "timestamp": "2026-03-18T12:00:00Z"}]
+        }
+        self.eval_drift_payload = {"drift_score": 0.03, "days": 7}
 
     def list_memories(self, tags, limit=500):
         if tags == ["ci-feedback"]:
@@ -16,6 +23,26 @@ class FakeStore:
             return self.runs
         return []
 
+    def evaluation_history(self, limit=10):
+        return self.eval_history_payload
+
+    def evaluation_drift(self, days=7):
+        return self.eval_drift_payload
+
+    def feedback_audit(self, limit=50):
+        return self.audit_entries[:limit]
+
+
+class BrokenObservabilityStore(FakeStore):
+    def evaluation_history(self, limit=10):
+        raise RuntimeError("eval-history unavailable")
+
+    def evaluation_drift(self, days=7):
+        raise RuntimeError("eval-drift unavailable")
+
+    def feedback_audit(self, limit=50):
+        raise RuntimeError("audit unavailable")
+
 
 class FakeFeedbackStore:
     def __init__(self):
@@ -23,7 +50,11 @@ class FakeFeedbackStore:
 
     def record_feedback(self, **kwargs):
         self.recorded.append(kwargs)
-        return {"feedback": kwargs["command"].replace("/ci ", "")}
+        return {
+            "feedback": kwargs["command"].replace("/ci ", ""),
+            "graph_update": {"updated": True, "predicate": "documents"},
+            "audit_entries": [{"operation": "CREATE", "artifact_id": "mem_1"}],
+        }
 
 
 class FeedbackAndMetricsTests(unittest.TestCase):
@@ -104,6 +135,8 @@ class FeedbackAndMetricsTests(unittest.TestCase):
 
         self.assertTrue(result["ok"])
         self.assertEqual(store.recorded[0]["commenter"], "blake")
+        self.assertTrue(result["graph_update"]["updated"])
+        self.assertEqual(result["audit_entries"][0]["operation"], "CREATE")
 
     def test_compute_metrics(self):
         store = FakeStore(
@@ -133,6 +166,16 @@ class FeedbackAndMetricsTests(unittest.TestCase):
         self.assertEqual(metrics["repositories"]["novyxlabs/novyx-core"]["analysis_runs"], 2)
         self.assertAlmostEqual(metrics["repositories"]["novyxlabs/novyx-core"]["top_1_rate"], 1 / 2)
         self.assertEqual(metrics["repositories"]["novyxlabs/novyx-mcp"]["analysis_runs"], 1)
+        self.assertEqual(metrics["novyx"]["audit"]["entry_count"], 1)
+        self.assertEqual(metrics["novyx"]["eval"]["history_count"], 1)
+        self.assertEqual(metrics["novyx"]["eval"]["drift"]["drift_score"], 0.03)
+
+    def test_compute_metrics_surfaces_novyx_errors(self):
+        store = BrokenObservabilityStore(feedback=[], runs=[])
+        metrics = compute_metrics(store)
+        self.assertEqual(metrics["novyx"]["eval"]["history_error"], "eval-history unavailable")
+        self.assertEqual(metrics["novyx"]["eval"]["drift_error"], "eval-drift unavailable")
+        self.assertEqual(metrics["novyx"]["audit"]["error"], "audit unavailable")
 
 
 if __name__ == "__main__":

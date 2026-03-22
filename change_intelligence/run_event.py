@@ -18,6 +18,7 @@ def build_config() -> ServiceConfig:
     docs_root = Path(os.environ.get("DOCS_ROOT", "docs")).resolve()
     docs_repo = os.environ.get("DOCS_REPO")
     docs_path = os.environ.get("DOCS_PATH", "docs")
+    ownership_rules_path = os.environ.get("DOC_OWNERSHIP_RULES_PATH")
     threshold = int(os.environ.get("CONFIDENCE_THRESHOLD", "60"))
 
     store = None
@@ -34,6 +35,7 @@ def build_config() -> ServiceConfig:
         docs_root=docs_root,
         docs_repo=docs_repo,
         docs_path=docs_path,
+        ownership_rules_path=Path(ownership_rules_path).resolve() if ownership_rules_path else None,
         novyx_store=store,
         github_client=github_client,
         confidence_threshold=threshold,

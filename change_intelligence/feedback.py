@@ -48,6 +48,8 @@ def process_feedback_event(raw_body: str, store: NovyxStore) -> dict[str, object
         "pull_request_number": int(issue.get("number") or 0),
         "feedback": result["feedback"],
         "comment_url": comment.get("html_url"),
+        "graph_update": result.get("graph_update"),
+        "audit_entries": result.get("audit_entries"),
     }
 
 

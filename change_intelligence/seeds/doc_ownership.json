@@ -1,3 +1,218 @@
 {
-  "repositories": {}
+  "repositories": {
+    "novyxlabs/change-intelligence": [
+      {
+        "code_prefix": "change_intelligence/ownership.py",
+        "doc_prefix": "README.md",
+        "score_boost": 40,
+        "description": "Ownership heuristics and rule loading should stay documented in the primary product README."
+      },
+      {
+        "code_prefix": "change_intelligence/analysis.py",
+        "doc_prefix": "ARCHITECTURE.md",
+        "score_boost": 36,
+        "description": "Core scoring and release-note logic should update the architecture walkthrough."
+      },
+      {
+        "code_prefix": "change_intelligence/service.py",
+        "doc_prefix": "ARCHITECTURE.md",
+        "score_boost": 36,
+        "description": "Webhook orchestration changes affect the end-to-end pipeline doc."
+      },
+      {
+        "code_prefix": "change_intelligence/feedback.py",
+        "doc_prefix": "MONITORING.md",
+        "score_boost": 40,
+        "description": "Reviewer feedback capture changes affect the monitoring and proof-window doc."
+      },
+      {
+        "code_prefix": "change_intelligence/metrics.py",
+        "doc_prefix": "MONITORING.md",
+        "score_boost": 40,
+        "description": "Metrics and proof-window changes should update the monitoring plan."
+      },
+      {
+        "code_prefix": ".github/workflows/",
+        "doc_prefix": "README.md",
+        "score_boost": 24,
+        "description": "Workflow surface changes usually affect setup and operational guidance."
+      }
+    ],
+    "novyxlabs/novyx-core": [
+      {
+        "code_prefix": "tools/query.py",
+        "doc_prefix": "api-reference/search.md",
+        "score_boost": 42,
+        "description": "Search/query tool changes should update the search API reference."
+      },
+      {
+        "code_prefix": "tools/query.py",
+        "doc_prefix": "api-reference/memories.md",
+        "score_boost": 30,
+        "description": "Query behavior also affects the memories read-path reference."
+      },
+      {
+        "code_prefix": "tools/ingestor.py",
+        "doc_prefix": "api-reference/memories.md",
+        "score_boost": 42,
+        "description": "Ingestion changes affect memory creation and mutation semantics."
+      },
+      {
+        "code_prefix": "tools/sentinel.py",
+        "doc_prefix": "api-reference/audit.md",
+        "score_boost": 42,
+        "description": "Sentinel and operational integrity checks belong with the audit API docs."
+      },
+      {
+        "code_prefix": "memory/health/",
+        "doc_prefix": "api-reference/eval.md",
+        "score_boost": 38,
+        "description": "Memory-health changes should update eval and drift documentation."
+      },
+      {
+        "code_prefix": "agents/",
+        "doc_prefix": "concepts/how-memory-works.md",
+        "score_boost": 28,
+        "description": "Agent-manifest and behavior changes usually affect conceptual memory docs."
+      }
+    ],
+    "novyxlabs/novyx-mcp": [
+      {
+        "code_prefix": "packages/novyx-mcp/src/server",
+        "doc_prefix": "mcp/index.md",
+        "score_boost": 42,
+        "description": "Server and transport changes should update the MCP overview."
+      },
+      {
+        "code_prefix": "packages/novyx-mcp/src/tools/",
+        "doc_prefix": "mcp/tools-reference.md",
+        "score_boost": 44,
+        "description": "Tool surface changes should update the MCP tools reference."
+      },
+      {
+        "code_prefix": "extensions/novyx_ram/",
+        "doc_prefix": "mcp/local-mode.md",
+        "score_boost": 34,
+        "description": "Local memory extension changes affect MCP local-mode docs."
+      },
+      {
+        "code_prefix": "packages/novyx-mcp/tests/",
+        "doc_prefix": "mcp/tools-reference.md",
+        "score_boost": 20,
+        "description": "Behavioral test changes around the MCP surface usually indicate tool-reference drift."
+      }
+    ],
+    "novyxlabs/novyx-starter-kit": [
+      {
+        "code_prefix": "templates/",
+        "doc_prefix": "getting-started/installation.md",
+        "score_boost": 34,
+        "description": "Template changes should update installation and bootstrap docs."
+      },
+      {
+        "code_prefix": "examples/",
+        "doc_prefix": "getting-started/quickstart.md",
+        "score_boost": 34,
+        "description": "Example and starter-flow changes should update quickstart guidance."
+      },
+      {
+        "code_prefix": ".github/workflows/",
+        "doc_prefix": "guides/claude-code.md",
+        "score_boost": 18,
+        "description": "Workflow automation changes often affect the developer guide path."
+      }
+    ],
+    "novyxlabs/novyx-memory-skill": [
+      {
+        "code_prefix": "SKILL.md",
+        "doc_prefix": "guides/claude-code.md",
+        "score_boost": 36,
+        "description": "Memory-skill behavior should stay aligned with the Claude Code integration guide."
+      },
+      {
+        "code_prefix": "references/",
+        "doc_prefix": "guides/knowledge-graph.md",
+        "score_boost": 22,
+        "description": "Memory-skill reference changes usually affect knowledge-graph usage guidance."
+      }
+    ],
+    "novyxlabs/novyx-vault": [
+      {
+        "code_prefix": "src/routes/audit",
+        "doc_prefix": "api-reference/audit.md",
+        "score_boost": 42,
+        "description": "Vault audit route changes should update the audit API reference."
+      },
+      {
+        "code_prefix": "src/routes/replay",
+        "doc_prefix": "api-reference/replay.md",
+        "score_boost": 42,
+        "description": "Replay route changes should update replay documentation."
+      },
+      {
+        "code_prefix": "src/routes/spaces",
+        "doc_prefix": "api-reference/spaces.md",
+        "score_boost": 40,
+        "description": "Space-management changes should update the spaces API docs."
+      }
+    ],
+    "novyxlabs/novyx-site": [
+      {
+        "code_prefix": "src/pages/changelog",
+        "doc_prefix": "changelog.md",
+        "score_boost": 32,
+        "description": "Changelog page changes should update the public changelog content."
+      },
+      {
+        "code_prefix": "src/pages/guides",
+        "doc_prefix": "guides/",
+        "score_boost": 34,
+        "description": "Guide page changes should update the matching guide content."
+      },
+      {
+        "code_prefix": "src/pages/errors",
+        "doc_prefix": "errors.md",
+        "score_boost": 36,
+        "description": "Public error-surface changes should update the errors reference."
+      },
+      {
+        "code_prefix": "src/components/control",
+        "doc_prefix": "api-reference/actions.md",
+        "score_boost": 24,
+        "description": "Control UI changes often reflect action and approval contract changes."
+      }
+    ],
+    "novyxlabs/novyx-control": [
+      {
+        "code_prefix": "src/connectors/",
+        "doc_prefix": "architecture/novyx-api-contract.md",
+        "score_boost": 34,
+        "description": "Connector contract changes should update the Novyx API contract doc."
+      },
+      {
+        "code_prefix": "src/core/core-audit.js",
+        "doc_prefix": "architecture/novyx-trace-mapping.md",
+        "score_boost": 36,
+        "description": "Control audit and trace mapping changes should update the trace-mapping architecture doc."
+      },
+      {
+        "code_prefix": "src/core/action-envelope.js",
+        "doc_prefix": "architecture/action-envelope.md",
+        "score_boost": 42,
+        "description": "Envelope encoding changes should update the action-envelope architecture doc."
+      },
+      {
+        "code_prefix": "src/clients/novyx-client.js",
+        "doc_prefix": "architecture/novyx-integration.md",
+        "score_boost": 40,
+        "description": "Novyx client wiring should update the integration architecture doc."
+      },
+      {
+        "code_prefix": "src/server.js",
+        "doc_prefix": "quickstart.md",
+        "score_boost": 24,
+        "description": "Server entrypoint changes usually affect quickstart and local-run instructions."
+      }
+    ]
+  }
 }
