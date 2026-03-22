@@ -78,6 +78,12 @@ Run the production server with credentials:
 GITHUB_WEBHOOK_SECRET=dev-secret NOVYX_API_KEY=nram_your_key GITHUB_TOKEN=ghp_your_token .venv/bin/python -m change_intelligence.server
 ```
 
+Dashboard endpoints:
+
+- `GET /dashboard` returns a read-only internal HTML dashboard
+- `GET /api/dashboard` returns the same operational view as JSON
+- both surfaces expose aggregate KPIs, proof-window progress, recent analysis runs, recent feedback, and explicit Novyx partial-failure errors
+
 ## Output
 
 The markdown report includes:
@@ -172,4 +178,4 @@ Later:
 
 - onboarding and tour drift detection
 - support knowledge updates
-- product-change impact dashboard
+- product-change impact dashboard beyond the internal ops view

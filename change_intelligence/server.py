@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 
+from .dashboard import build_dashboard_payload, render_dashboard_html
 from .github_client import GitHubClient
 from .novyx_store import NovyxConfig, NovyxStore
 from .service import ServiceConfig, process_github_event
@@ -21,9 +22,24 @@ class AppHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _html(self, status_code: int, body_text: str):
+        body = body_text.encode("utf8")
+        self.send_response(status_code)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
         if self.path == "/health":
             self._json(200, {"ok": True})
+            return
+        if self.path == "/api/dashboard":
+            self._json(200, build_dashboard_payload(self.config.novyx_store))
+            return
+        if self.path == "/dashboard":
+            payload = build_dashboard_payload(self.config.novyx_store)
+            self._html(200, render_dashboard_html(payload))
             return
         self._json(404, {"error": "Not found"})
 
