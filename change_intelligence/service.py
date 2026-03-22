@@ -315,6 +315,8 @@ def finalize_event_response(
                 learned_signals=learned_signals,
                 learning_feedback=learning_feedback,
                 release_notes=analysis["release_notes"],
+                support_updates=analysis["support_updates"],
+                onboarding_updates=analysis["onboarding_updates"],
                 summary=analysis["summary"],
             )
         except Exception:
@@ -355,6 +357,8 @@ def finalize_event_response(
             "summary": analysis["summary"],
             "recommendations": analysis["recommendations"],
             "release_notes": analysis["release_notes"],
+            "support_updates": analysis["support_updates"],
+            "onboarding_updates": analysis["onboarding_updates"],
             "historical_patterns": patterns,
             "learned_signals": learned_signals,
             "learning_feedback": learning_feedback,

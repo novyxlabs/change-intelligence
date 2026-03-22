@@ -17,6 +17,7 @@ The Node code under `src/` is kept only as a reference CLI for the original rank
    - a markdown brief
    - structured JSON
    - a release-note draft when confidence is high enough
+   - support/onboarding update drafts when adjacent audience-specific docs rank strongly enough
 9. Optionally learn from merged PRs, persist traces in Novyx, and upsert or clear the PR comment
 
 ## Design Choices

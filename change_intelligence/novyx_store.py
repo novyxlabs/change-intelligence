@@ -180,6 +180,8 @@ class NovyxStore:
         learned_signals: Optional[Dict[str, Dict[str, object]]] = None,
         learning_feedback: Optional[Dict[str, Sequence[str]]] = None,
         release_notes: Optional[Dict[str, object]] = None,
+        support_updates: Optional[Dict[str, object]] = None,
+        onboarding_updates: Optional[Dict[str, object]] = None,
         summary: Optional[Dict[str, object]] = None,
     ) -> Dict[str, object]:
         trace = self.client.trace_create(
@@ -254,6 +256,28 @@ class NovyxStore:
                     "included_in_report": bool(release_notes.get("included_in_report")),
                     "confidence": release_notes.get("confidence"),
                     "affected_surfaces": len(release_notes.get("affected_surfaces") or []),
+                },
+            )
+        if support_updates:
+            self.client.trace_step(
+                trace_id,
+                "action",
+                f"Support update draft {'included' if support_updates.get('included_in_report') else 'suppressed'}.",
+                metadata={
+                    "included_in_report": bool(support_updates.get("included_in_report")),
+                    "confidence": support_updates.get("confidence"),
+                    "recommended_docs": len(support_updates.get("recommended_docs") or []),
+                },
+            )
+        if onboarding_updates:
+            self.client.trace_step(
+                trace_id,
+                "action",
+                f"Onboarding update draft {'included' if onboarding_updates.get('included_in_report') else 'suppressed'}.",
+                metadata={
+                    "included_in_report": bool(onboarding_updates.get("included_in_report")),
+                    "confidence": onboarding_updates.get("confidence"),
+                    "recommended_docs": len(onboarding_updates.get("recommended_docs") or []),
                 },
             )
 

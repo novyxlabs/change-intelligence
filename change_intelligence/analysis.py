@@ -45,6 +45,33 @@ SECURITY_HINTS = {
     "memory": {"memories", "memory", "ttl", "expired", "expiry", "store"},
     "audit": {"audit", "security", "findings"},
 }
+SUPPORT_DOC_HINTS = {
+    "support",
+    "faq",
+    "troubleshooting",
+    "troubleshoot",
+    "runbook",
+    "incident",
+    "help",
+    "known-issues",
+    "errors",
+}
+ONBOARDING_DOC_HINTS = {
+    "onboarding",
+    "getting-started",
+    "quickstart",
+    "quick-start",
+    "setup",
+    "install",
+    "installation",
+    "tutorial",
+    "walkthrough",
+    "tour",
+    "first-run",
+    "signup",
+    "login",
+    "auth",
+}
 SYMBOL_PATTERNS = [
     re.compile(r"\b(?:function|async function)\s+([A-Za-z0-9_]+)"),
     re.compile(r"\bclass\s+([A-Za-z0-9_]+)"),
@@ -90,6 +117,15 @@ class DocIndex:
     content: str
     tokens: Set[str]
     surfaces: Set[str]
+
+
+def doc_text(doc: DocIndex) -> str:
+    return f"{doc.relative_path.lower()} {' '.join(doc.headings).lower()} {doc.content.lower()}"
+
+
+def doc_matches_audience(doc: DocIndex, hints: Set[str]) -> bool:
+    text = doc_text(doc)
+    return any(hint in text for hint in hints)
 
 
 def extract_symbols(line: str) -> Set[str]:
@@ -651,26 +687,131 @@ def build_release_notes(summary: Dict[str, object], diff: DiffSummary, recommend
     }
 
 
+def build_support_updates(
+    summary: Dict[str, object],
+    diff: DiffSummary,
+    recommendations: Sequence[Dict[str, object]],
+    docs: Sequence[DocIndex],
+) -> Dict[str, object]:
+    docs_by_path = {item.relative_path: item for item in docs}
+    support_recommendations = [
+        item for item in recommendations
+        if doc_matches_audience(docs_by_path.get(item["relative_path"], DocIndex("", "", [], "", set(), set())), SUPPORT_DOC_HINTS)
+    ]
+    top = support_recommendations[0] if support_recommendations else {}
+    confidence = int(top.get("confidence", 0) or 0)
+    primary_confidence = int((recommendations[0] if recommendations else {}).get("confidence", 0) or 0)
+    included = confidence >= 50 and primary_confidence >= 80 and bool(support_recommendations)
+    affected_surfaces = diff.surfaces[:4]
+    changed_symbols = summary["changed_symbols"][:4]
+    target_docs = [item["relative_path"] for item in support_recommendations[:3]]
+
+    bullets: List[str] = []
+    if target_docs:
+        bullets.append("Update support-facing docs in " + ", ".join(f"`{item}`" for item in target_docs) + ".")
+    if affected_surfaces:
+        bullets.append("Support should expect customer questions about " + ", ".join(f"`{item}`" for item in affected_surfaces[:3]) + ".")
+    if changed_symbols:
+        bullets.append("Verify troubleshooting guidance still reflects " + ", ".join(f"`{item}`" for item in changed_symbols[:3]) + ".")
+
+    return {
+        "title": "Support Knowledge Update",
+        "summary": bullets[0] if bullets else "Support-facing knowledge may need updates after this change.",
+        "bullets": bullets[:3],
+        "recommended_docs": target_docs,
+        "affected_surfaces": affected_surfaces,
+        "confidence": confidence,
+        "included_in_report": included,
+        "suppressed_reason": None if included else "No support-oriented docs ranked above the adjacent-update threshold.",
+    }
+
+
+def build_onboarding_updates(
+    summary: Dict[str, object],
+    diff: DiffSummary,
+    recommendations: Sequence[Dict[str, object]],
+    docs: Sequence[DocIndex],
+) -> Dict[str, object]:
+    docs_by_path = {item.relative_path: item for item in docs}
+    onboarding_recommendations = [
+        item for item in recommendations
+        if doc_matches_audience(docs_by_path.get(item["relative_path"], DocIndex("", "", [], "", set(), set())), ONBOARDING_DOC_HINTS)
+    ]
+    top = onboarding_recommendations[0] if onboarding_recommendations else {}
+    confidence = int(top.get("confidence", 0) or 0)
+    primary_confidence = int((recommendations[0] if recommendations else {}).get("confidence", 0) or 0)
+    included = confidence >= 50 and primary_confidence >= 80 and bool(onboarding_recommendations)
+    affected_surfaces = diff.surfaces[:4]
+    changed_symbols = summary["changed_symbols"][:4]
+    target_docs = [item["relative_path"] for item in onboarding_recommendations[:3]]
+
+    bullets: List[str] = []
+    if target_docs:
+        bullets.append("Update onboarding or setup docs in " + ", ".join(f"`{item}`" for item in target_docs) + ".")
+    if affected_surfaces:
+        bullets.append("Check first-run or setup flows that touch " + ", ".join(f"`{item}`" for item in affected_surfaces[:3]) + ".")
+    if changed_symbols:
+        bullets.append("Confirm walkthrough steps still match " + ", ".join(f"`{item}`" for item in changed_symbols[:3]) + ".")
+
+    return {
+        "title": "Onboarding/Tour Update",
+        "summary": bullets[0] if bullets else "Onboarding guidance may need updates after this change.",
+        "bullets": bullets[:3],
+        "recommended_docs": target_docs,
+        "affected_surfaces": affected_surfaces,
+        "confidence": confidence,
+        "included_in_report": included,
+        "suppressed_reason": None if included else "No onboarding-oriented docs ranked above the adjacent-update threshold.",
+    }
+
+
 def render_report(
     summary: Dict[str, object],
     recommendations: Sequence[Dict[str, object]],
     release_notes: Dict[str, object],
+    support_updates: Dict[str, object],
+    onboarding_updates: Dict[str, object],
 ) -> str:
     base = render_markdown(summary, recommendations)
-    if not release_notes.get("included_in_report"):
-        return base
+    sections = [base]
 
-    lines = [
-        base,
-        "",
-        "## Release Notes Draft",
-        "",
-        f"Title: **{release_notes['title']}**",
-        "",
-    ]
-    for bullet in release_notes.get("bullets", []):
-        lines.append(f"- {bullet}")
-    return "\n".join(lines).rstrip()
+    if release_notes.get("included_in_report"):
+        lines = [
+            "",
+            "## Release Notes Draft",
+            "",
+            f"Title: **{release_notes['title']}**",
+            "",
+        ]
+        for bullet in release_notes.get("bullets", []):
+            lines.append(f"- {bullet}")
+        sections.append("\n".join(lines).rstrip())
+
+    if support_updates.get("included_in_report"):
+        lines = [
+            "",
+            "## Support Knowledge Update",
+            "",
+            f"Title: **{support_updates['title']}**",
+            "",
+        ]
+        for bullet in support_updates.get("bullets", []):
+            lines.append(f"- {bullet}")
+        sections.append("\n".join(lines).rstrip())
+
+    if onboarding_updates.get("included_in_report"):
+        lines = [
+            "",
+            "## Onboarding/Tour Update",
+            "",
+            f"Title: **{onboarding_updates['title']}**",
+            "",
+        ]
+        for bullet in onboarding_updates.get("bullets", []):
+            lines.append(f"- {bullet}")
+        sections.append("\n".join(lines).rstrip())
+
+    return "\n".join(section.rstrip() for section in sections if section).rstrip()
 
 
 def analyze_patch(
@@ -701,9 +842,13 @@ def analyze_patch(
         "docs_analyzed": len(indexed_docs),
     }
     release_notes = build_release_notes(summary, diff, recommendations)
+    support_updates = build_support_updates(summary, diff, recommendations, indexed_docs)
+    onboarding_updates = build_onboarding_updates(summary, diff, recommendations, indexed_docs)
     return {
         "summary": summary,
         "recommendations": recommendations,
         "release_notes": release_notes,
-        "markdown": render_report(summary, recommendations, release_notes),
+        "support_updates": support_updates,
+        "onboarding_updates": onboarding_updates,
+        "markdown": render_report(summary, recommendations, release_notes, support_updates, onboarding_updates),
     }

@@ -20,6 +20,7 @@ The earlier Node implementation in `src/` remains as a reference CLI and fixture
 - Ranks the most likely docs pages affected
 - Generates a markdown report with evidence, confidence scores, and draft patch suggestions
 - Generates a structured release-note draft when recommendation confidence is strong
+- Generates adjacent support-knowledge and onboarding/tour update drafts when the repo has those audience-specific docs
 - Stores patterns, triples, and audit traces in Novyx so the system gets smarter over time
 - Emits the same result as JSON for GitHub webhook integration
 
@@ -96,6 +97,8 @@ The markdown report includes:
 - exact route/API surface matches when present
 - recommended update focus areas
 - release-note draft when confidence clears the threshold
+- support-knowledge update draft when a support-oriented doc is a strong adjacent target
+- onboarding/tour update draft when a setup or onboarding doc is a strong adjacent target
 
 ## GitHub App Wrapper
 
@@ -116,6 +119,7 @@ Current behavior:
 - upserts a marker-based PR comment on GitHub only when confidence clears the threshold
 - deletes the marker comment when a rerun drops below the threshold
 - returns the comment body and structured recommendations
+- returns adjacent support and onboarding update drafts when the repo contains those docs
 
 Reviewer feedback is part of the live loop:
 

@@ -370,6 +370,8 @@ index 1111111..2222222 100644
         self.assertEqual(result["payload"]["recommendations"][0]["relative_path"], "search-reference.md")
         self.assertTrue(result["payload"]["release_notes"]["included_in_report"])
         self.assertEqual(result["payload"]["release_notes"]["affected_surfaces"], ["/v1/search", "/v1/search/reindex"])
+        self.assertFalse(result["payload"]["support_updates"]["included_in_report"])
+        self.assertFalse(result["payload"]["onboarding_updates"]["included_in_report"])
 
 
 if __name__ == "__main__":
