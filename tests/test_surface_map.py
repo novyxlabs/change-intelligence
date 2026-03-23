@@ -41,6 +41,10 @@ class SurfaceMapTests(unittest.TestCase):
             extract_surfaces_from_line('request("GET /v1/search/reindex")'),
             {"/v1/search/reindex"},
         )
+        self.assertEqual(
+            extract_surfaces_from_line("Docs mention /v1/webhooks."),
+            {"/v1/webhooks"},
+        )
 
     def test_analyze_patch_prefers_docs_with_exact_surface_matches(self):
         result = analyze_patch(PATCH, docs=DOCS, repository="acme/app")
@@ -52,6 +56,46 @@ class SurfaceMapTests(unittest.TestCase):
         )
         self.assertTrue(
             any("routes and APIs" in line for line in result["recommendations"][0]["update_focus"])
+        )
+
+    def test_exact_surface_docs_outrank_broad_historical_matches(self):
+        patch = """diff --git a/change_intelligence/server.py b/change_intelligence/server.py
+index 1111111..2222222 100644
+--- a/change_intelligence/server.py
++++ b/change_intelligence/server.py
+@@ -1,0 +1,4 @@
++# POST /v1/webhooks.
++# Webhook event notifications should stay explicit here.
++# This GitHub handler verifies webhook signatures before pull_request processing.
++# It keeps delivery behavior separate from memory.created events.
+"""
+        docs = [
+            {
+                "path": "docs/changelog.md",
+                "relative_path": "changelog.md",
+                "content": "# Changelog\n\nGeneral release log for product updates and events.",
+            },
+            {
+                "path": "docs/api-reference/webhooks.md",
+                "relative_path": "api-reference/webhooks.md",
+                "content": "# Webhooks\n\n## POST /v1/webhooks\n\nRegister webhook event notifications.",
+            },
+        ]
+        result = analyze_patch(
+            patch,
+            docs=docs,
+            repository="novyxlabs/change-intelligence",
+            patterns=[
+                {"observation": "change_intelligence/server.py changed -> changelog.md was predicted for docs review"},
+                {"observation": "change_intelligence/server.py changed -> changelog.md was predicted for docs review"},
+                {"observation": "change_intelligence/server.py changed -> api-reference/webhooks.md was predicted for docs review"},
+            ],
+        )
+
+        self.assertEqual(result["summary"]["changed_surfaces"], ["/v1/webhooks"])
+        self.assertEqual(result["recommendations"][0]["relative_path"], "api-reference/webhooks.md")
+        self.assertTrue(
+            any("exact route/API matches outrank broad historical-pattern matches" in line for line in result["recommendations"][0]["evidence"])
         )
 
 

@@ -333,6 +333,21 @@ def is_index_page(doc: DocIndex) -> bool:
     return path.endswith("index.md") or path == "index.md"
 
 
+def is_changelog_page(doc: DocIndex) -> bool:
+    path = doc.relative_path.lower()
+    return path.endswith("changelog.md") or path == "changelog.md"
+
+
+def exact_surface_targets(diff: DiffSummary, docs: Sequence[DocIndex]) -> Set[str]:
+    if not diff.surfaces:
+        return set()
+    targets: Set[str] = set()
+    for doc in docs:
+        if any(surface in doc.surfaces for surface in diff.surfaces):
+            targets.add(doc.relative_path)
+    return targets
+
+
 def is_reference_expansion(diff: DiffSummary) -> bool:
     identifier_count = len(diff.added_identifiers)
     changed_paths = " ".join(file.path.lower() for file in diff.files)
@@ -609,6 +624,31 @@ def rank_documents(
                 narrowed.append(item)
         if narrowed:
             recommendations = narrowed[:3] + [item for item in recommendations if int(item["confidence"]) < 60]
+
+    surface_targets = exact_surface_targets(diff, docs)
+    if surface_targets:
+        for item in recommendations:
+            relative_path = str(item.get("relative_path") or "")
+            if relative_path in surface_targets:
+                item["score"] = int(item["score"]) + 24
+                item["confidence"] = min(100, int(item["confidence"]) + 8)
+                item["evidence"] = item["evidence"] + [
+                    "Post-rank boost: exact route/API matches outrank broad historical-pattern matches"
+                ]
+                continue
+            if is_changelog_page(DocIndex(path=str(item["path"]), relative_path=relative_path, headings=[], content="", tokens=set(), surfaces=set())):
+                item["score"] = max(0, int(item["score"]) - 36)
+                item["confidence"] = min(int(item["confidence"]), 64)
+                item["evidence"] = item["evidence"] + [
+                    "Post-rank demotion: changelog pages should not outrank docs with exact route/API matches"
+                ]
+                continue
+            if diff.surfaces and int(item["confidence"]) >= 80:
+                item["score"] = max(0, int(item["score"]) - 12)
+                item["confidence"] = max(55, min(int(item["confidence"]), 88))
+                item["evidence"] = item["evidence"] + [
+                    "Post-rank trim: exact route/API matches were found elsewhere, so weaker indirect matches were demoted"
+                ]
 
     recommendations.sort(
         key=lambda item: (item["confidence"], item["score"]),
