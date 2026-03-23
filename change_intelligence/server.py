@@ -61,6 +61,8 @@ class AppHandler(BaseHTTPRequestHandler):
             self._json(404, {"error": "Not found"})
             return
 
+        # GitHub App auth now owns comment writes on this path, which is the right
+        # production posture for repository-scoped PR automation.
         content_length = int(self.headers.get("Content-Length", "0"))
         raw_body = self.rfile.read(content_length).decode("utf8")
         result = process_github_event(
