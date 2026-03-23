@@ -28,6 +28,7 @@ def _normalize_run(memory: Dict[str, object]) -> Dict[str, object]:
         "head_sha": metadata.get("head_sha"),
         "top_doc": metadata.get("top_doc"),
         "top_confidence": metadata.get("top_confidence"),
+        "confidence_tier": metadata.get("confidence_tier"),
         "comment_suppressed": bool(metadata.get("comment_suppressed")),
         "recommendation_count": metadata.get("recommendation_count"),
         "changed_files": metadata.get("changed_files"),
@@ -141,13 +142,14 @@ def _render_repo_rows(repositories: object) -> str:
 
 def _render_run_rows(runs: List[Dict[str, object]]) -> str:
     if not runs:
-        return "<tr><td colspan='6'>No analysis runs yet.</td></tr>"
+        return "<tr><td colspan='7'>No analysis runs yet.</td></tr>"
     return "".join(
         "<tr>"
         f"<td>{_format_value(item.get('repository'))}</td>"
         f"<td>{_format_value(item.get('pull_request_number'))}</td>"
         f"<td>{_format_value(item.get('top_doc'))}</td>"
         f"<td>{_format_value(item.get('top_confidence'))}</td>"
+        f"<td>{_format_value(item.get('confidence_tier'))}</td>"
         f"<td>{'yes' if item.get('comment_suppressed') else 'no'}</td>"
         f"<td>{_format_value(item.get('created_at'))}</td>"
         "</tr>"
@@ -239,6 +241,8 @@ def render_dashboard_html(payload: Dict[str, object]) -> str:
       <section class="panel">
         <h2>Proof Window</h2>
         <p>Runs: {_format_value(proof_window.get("analysis_runs"))}. Remaining to 20: {_format_value(proof_window.get("remaining_to_minimum"))}. Ready: {_format_value(proof_window.get("ready_for_case_study"))}.</p>
+        <p class="meta">Recent confidence mix: high {_format_percent((metrics.get("confidence_tiers") or {}).get("high_confidence_rate"))}, review {_format_percent((metrics.get("confidence_tiers") or {}).get("review_rate"))}, silent {_format_percent((metrics.get("confidence_tiers") or {}).get("silent_rate"))}.</p>
+        <p class="meta">Trend: top-1 {_format_value((metrics.get("trend") or {}).get("top_1_rate"))}, false-positive {_format_value((metrics.get("trend") or {}).get("false_positive_rate"))}, miss {_format_value((metrics.get("trend") or {}).get("miss_rate"))}.</p>
       </section>
       <section class="panel">
         <h2>Novyx Health</h2>
@@ -263,7 +267,7 @@ def render_dashboard_html(payload: Dict[str, object]) -> str:
       <section class="panel">
         <h2>Recent Analysis Runs</h2>
         <table>
-          <thead><tr><th>Repository</th><th>PR</th><th>Top doc</th><th>Confidence</th><th>Suppressed</th><th>Created</th></tr></thead>
+          <thead><tr><th>Repository</th><th>PR</th><th>Top doc</th><th>Confidence</th><th>Tier</th><th>Suppressed</th><th>Created</th></tr></thead>
           <tbody>{_render_run_rows(payload.get("recent_runs") if isinstance(payload.get("recent_runs"), list) else [])}</tbody>
         </table>
       </section>

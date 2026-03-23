@@ -183,6 +183,7 @@ class NovyxStore:
         changed_files: Sequence[str],
         recommendations: Sequence[Dict[str, object]],
         *,
+        confidence_tier: str = "silent",
         comment_suppressed: bool = False,
         head_sha: Optional[str] = None,
         action: Optional[str] = None,
@@ -296,6 +297,7 @@ class NovyxStore:
             pull_request_number,
             changed_files,
             recommendations,
+            confidence_tier=confidence_tier,
             comment_suppressed=comment_suppressed,
             head_sha=head_sha,
         )
@@ -378,6 +380,7 @@ class NovyxStore:
         changed_files: Sequence[str],
         recommendations: Sequence[Dict[str, object]],
         *,
+        confidence_tier: str,
         comment_suppressed: bool,
         head_sha: Optional[str],
     ) -> Dict[str, object]:
@@ -385,13 +388,14 @@ class NovyxStore:
         sha_label = f"@{head_sha[:12]}" if head_sha else ""
         try:
             return self._remember(
-                f"Analysis run for {repository}#{pull_request_number}{sha_label}: {'suppressed' if comment_suppressed else 'commented'}",
-                importance=5,
-                tags=["analysis-run", "suppressed" if comment_suppressed else "commented"],
+                f"Analysis run for {repository}#{pull_request_number}{sha_label}: {confidence_tier}",
+                importance=6 if confidence_tier == "high-confidence" else 5,
+                tags=["analysis-run", confidence_tier, "suppressed" if comment_suppressed else "commented"],
                 context=f"{repository}#{pull_request_number}",
                 metadata={
                     "repository": repository,
                     "pull_request_number": pull_request_number,
+                    "confidence_tier": confidence_tier,
                     "comment_suppressed": comment_suppressed,
                     "head_sha": head_sha,
                     "changed_files": list(changed_files),

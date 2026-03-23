@@ -78,6 +78,15 @@ def filter_comment_recommendations(recommendations: Sequence[Dict[str, object]],
     return [item for item in recommendations if int(item.get("confidence", 0)) >= threshold]
 
 
+def classify_confidence_tier(recommendations: Sequence[Dict[str, object]], threshold: int) -> str:
+    top_confidence = int((recommendations[0].get("confidence", 0) if recommendations else 0) or 0)
+    if top_confidence >= max(85, threshold + 15):
+        return "high-confidence"
+    if top_confidence >= threshold:
+        return "review-recommended"
+    return "silent"
+
+
 def apply_learning_feedback(
     learned_signals: Dict[str, Dict[str, object]],
     learning_feedback: Optional[Dict[str, Sequence[str]]],
@@ -210,6 +219,7 @@ def build_comment(
         f"Repository: `{repository}`",
         f"Pull request: #{pull_request_number}",
         f"Confidence threshold: `{threshold}`",
+        f"Tier: `{classify_confidence_tier(recommendations, threshold)}`",
         "",
     ]
     lines.extend(["### What Changed", ""])
@@ -393,6 +403,7 @@ def finalize_event_response(
     learned_signals: Dict[str, Dict[str, object]],
     learning_feedback: Optional[Dict[str, Sequence[str]]],
 ) -> Dict[str, object]:
+    confidence_tier = classify_confidence_tier(analysis["recommendations"], config.confidence_threshold)
     comment_recommendations = filter_comment_recommendations(
         analysis["recommendations"],
         config.confidence_threshold,
@@ -409,6 +420,7 @@ def finalize_event_response(
                 context.pull_request_number,
                 analysis["summary"]["changed_files"],
                 analysis["recommendations"],
+                confidence_tier=confidence_tier,
                 comment_suppressed=comment_suppressed,
                 head_sha=context.head_sha,
                 action=context.action,
@@ -469,6 +481,7 @@ def finalize_event_response(
             "comment_body": comment_body,
             "comment": comment,
             "comment_suppressed": comment_suppressed,
+            "confidence_tier": confidence_tier,
             "confidence_threshold": config.confidence_threshold,
         },
     }

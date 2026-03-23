@@ -28,7 +28,7 @@ class FakeStore:
         ]
         self.runs = [
             {
-                "tags": ["analysis-run", "commented"],
+                "tags": ["analysis-run", "review-recommended", "commented"],
                 "context": "novyxlabs/novyx-core#12",
                 "created_at": "2026-03-22T12:00:00Z",
                 "metadata": {
@@ -37,6 +37,7 @@ class FakeStore:
                     "head_sha": "abc123def456",
                     "top_doc": "billing.md",
                     "top_confidence": 84,
+                    "confidence_tier": "review-recommended",
                     "comment_suppressed": False,
                     "recommendation_count": 3,
                     "changed_files": ["src/billing/createCheckoutSession.ts"],
@@ -76,6 +77,7 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(payload["recent_feedback"][0]["feedback"], "correct")
         self.assertEqual(payload["metrics"]["hotspots"][0]["area"], "src/billing")
         self.assertEqual(payload["metrics"]["hotspots"][0]["top_doc"], "billing.md")
+        self.assertEqual(payload["metrics"]["confidence_tiers"]["counts"]["review_recommended"], 1)
         self.assertEqual(payload["errors"], [])
 
     def test_build_dashboard_payload_surfaces_partial_errors(self):
@@ -91,6 +93,7 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("Change Intelligence Dashboard", html)
         self.assertIn("Recent Analysis Runs", html)
         self.assertIn("Drift Hotspots", html)
+        self.assertIn("Recent confidence mix", html)
         self.assertIn("novyxlabs/novyx-core", html)
         self.assertIn("billing.md", html)
 

@@ -158,6 +158,7 @@ class ChangeIntelligenceServiceTests(unittest.TestCase):
 
         self.assertEqual(result["status_code"], 200)
         self.assertFalse(result["payload"]["comment_suppressed"])
+        self.assertEqual(result["payload"]["confidence_tier"], "high-confidence")
         self.assertEqual(result["payload"]["comment"]["id"], 99)
         self.assertEqual(result["payload"]["recommendations"][0]["relative_path"], "billing.md")
         self.assertGreaterEqual(result["payload"]["recommendations"][0]["confidence"], 60)
@@ -171,6 +172,7 @@ class ChangeIntelligenceServiceTests(unittest.TestCase):
         self.assertIn("### What Changed", result["payload"]["comment_body"])
         self.assertIn("### Why This Is High Confidence", result["payload"]["comment_body"])
         self.assertIn("### Risk If Ignored", result["payload"]["comment_body"])
+        self.assertIn("Tier: `high-confidence`", result["payload"]["comment_body"])
         self.assertIn("The top doc mentions the changed symbols directly.", result["payload"]["comment_body"])
         self.assertTrue(any("Novyx remembers this exact changed file mapping" in line for line in result["payload"]["recommendations"][0]["evidence"]))
         self.assertEqual(result["payload"]["trace"]["evaluation"]["health_score"], 98)
@@ -209,6 +211,7 @@ class ChangeIntelligenceServiceTests(unittest.TestCase):
 
         self.assertEqual(result["status_code"], 200)
         self.assertTrue(result["payload"]["comment_suppressed"])
+        self.assertEqual(result["payload"]["confidence_tier"], "silent")
         self.assertEqual(result["payload"]["comment"]["deleted"], True)
         self.assertIsNone(result["payload"]["comment_body"])
         self.assertEqual(github_client.deleted_comments[0][2], 42)

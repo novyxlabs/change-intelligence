@@ -147,10 +147,10 @@ class FeedbackAndMetricsTests(unittest.TestCase):
                 {"tags": ["ci-feedback", "missed-doc"], "context": "novyxlabs/novyx-mcp#3"},
             ],
             runs=[
-                {"tags": ["analysis-run", "suppressed"], "context": "novyxlabs/novyx-core#1", "created_at": "2026-03-18T09:00:00Z"},
-                {"tags": ["analysis-run", "commented"], "context": "novyxlabs/novyx-core#1", "created_at": "2026-03-18T11:00:00Z"},
-                {"tags": ["analysis-run", "commented"], "context": "novyxlabs/novyx-core#2"},
-                {"tags": ["analysis-run", "suppressed"], "context": "novyxlabs/novyx-mcp#3"},
+                {"tags": ["analysis-run", "silent", "suppressed"], "context": "novyxlabs/novyx-core#1", "created_at": "2026-03-18T09:00:00Z"},
+                {"tags": ["analysis-run", "review-recommended", "commented"], "context": "novyxlabs/novyx-core#1", "created_at": "2026-03-18T11:00:00Z"},
+                {"tags": ["analysis-run", "high-confidence", "commented"], "context": "novyxlabs/novyx-core#2"},
+                {"tags": ["analysis-run", "silent", "suppressed"], "context": "novyxlabs/novyx-mcp#3"},
             ],
         )
         metrics = compute_metrics(store)
@@ -160,6 +160,9 @@ class FeedbackAndMetricsTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["top_1_rate"], 1 / 3)
         self.assertAlmostEqual(metrics["comment_rate"], 2 / 3)
         self.assertAlmostEqual(metrics["false_positive_rate"], 1 / 2)
+        self.assertAlmostEqual(metrics["confidence_tiers"]["high_confidence_rate"], 1 / 3)
+        self.assertAlmostEqual(metrics["confidence_tiers"]["silent_rate"], 1 / 3)
+        self.assertEqual(metrics["trend"]["top_1_rate"], "flat")
         self.assertEqual(metrics["proof_window"]["remaining_to_minimum"], 17)
         self.assertFalse(metrics["proof_window"]["ready_for_case_study"])
         self.assertEqual(metrics["proof_window"]["unique_prs"], 3)

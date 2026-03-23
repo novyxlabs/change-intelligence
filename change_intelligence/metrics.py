@@ -96,6 +96,56 @@ def summarize(feedback: Iterable[Dict[str, object]], runs: Iterable[Dict[str, ob
     }
 
 
+def summarize_confidence_tiers(runs: Iterable[Dict[str, object]]) -> Dict[str, object]:
+    runs = collapse_latest_by_context(runs)
+    total = len(runs)
+    high = sum(1 for item in runs if "high-confidence" in (item.get("tags") or []))
+    review = sum(1 for item in runs if "review-recommended" in (item.get("tags") or []))
+    silent = sum(1 for item in runs if "silent" in (item.get("tags") or []))
+    return {
+        "high_confidence_rate": compute_rate(high, total),
+        "review_rate": compute_rate(review, total),
+        "silent_rate": compute_rate(silent, total),
+        "counts": {
+            "high_confidence": high,
+            "review_recommended": review,
+            "silent": silent,
+        },
+    }
+
+
+def metric_delta_label(recent: float, baseline: float) -> str:
+    delta = recent - baseline
+    if abs(delta) < 0.001:
+        return "flat"
+    direction = "up" if delta > 0 else "down"
+    return f"{direction} {abs(delta) * 100:.0f} pts"
+
+
+def summarize_trend(feedback: Iterable[Dict[str, object]], runs: Iterable[Dict[str, object]]) -> Dict[str, str]:
+    latest_feedback = collapse_latest_by_context(feedback)
+    latest_runs = collapse_latest_by_context(runs)
+    latest_feedback.sort(key=memory_sort_key, reverse=True)
+    latest_runs.sort(key=memory_sort_key, reverse=True)
+
+    recent_feedback = latest_feedback[:10]
+    baseline_feedback = latest_feedback[10:20]
+    recent_runs = latest_runs[:10]
+    baseline_runs = latest_runs[10:20]
+
+    recent = summarize(recent_feedback, recent_runs)
+    baseline = summarize(baseline_feedback, baseline_runs) if baseline_runs or baseline_feedback else recent
+
+    return {
+        "top_1_rate": metric_delta_label(float(recent["top_1_rate"]), float(baseline["top_1_rate"])),
+        "false_positive_rate": metric_delta_label(float(recent["false_positive_rate"]), float(baseline["false_positive_rate"])),
+        "miss_rate": metric_delta_label(
+            compute_rate(int(recent["counts"]["missed_doc"]), int(recent["analysis_runs"])),
+            compute_rate(int(baseline["counts"]["missed_doc"]), int(baseline["analysis_runs"])),
+        ),
+    }
+
+
 def summarize_hotspots(feedback: Iterable[Dict[str, object]], runs: Iterable[Dict[str, object]]) -> List[Dict[str, object]]:
     latest_feedback = collapse_latest_by_context(feedback)
     latest_runs = collapse_latest_by_context(runs)
@@ -172,6 +222,8 @@ def compute_metrics(store: NovyxStore, limit: int = 500) -> dict[str, object]:
     runs = store.list_memories(["analysis-run"], limit=limit)
 
     metrics = summarize(feedback, runs)
+    metrics["confidence_tiers"] = summarize_confidence_tiers(runs)
+    metrics["trend"] = summarize_trend(feedback, runs)
     metrics["novyx"] = {
         "eval": {},
         "audit": {},
