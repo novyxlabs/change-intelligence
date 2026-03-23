@@ -65,6 +65,8 @@ class AppHandler(BaseHTTPRequestHandler):
         # separate Novyx webhook API surface like POST /v1/webhooks. That API uses
         # fields such as url, events, description, format, active, created_at, and
         # updated_at, while this handler verifies GitHub signatures for pull_request events.
+        # Keeping those surfaces separate avoids confusing GitHub delivery behavior
+        # with Novyx memory-event delivery behavior in operational debugging.
         content_length = int(self.headers.get("Content-Length", "0"))
         raw_body = self.rfile.read(content_length).decode("utf8")
         result = process_github_event(
