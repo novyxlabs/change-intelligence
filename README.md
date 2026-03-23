@@ -1,37 +1,42 @@
 # Change Intelligence
 
-`change-intelligence` is a GitHub app for one job:
+Product code changes.
+Docs go stale.
+Usually nobody notices until users do.
 
-> when product code changes, tell me which docs are now wrong.
+`change-intelligence` exists to catch that in the pull request.
 
 The Python service under `change_intelligence/` is the only production runtime.
 The earlier Node implementation in `src/` remains as a reference CLI and fixture harness for the ranking logic, not as a deployed server.
 
 ## Why It Exists
 
-Most teams do not fail because nobody can write documentation.
-They fail because nobody notices documentation went stale until after users hit the broken path.
+Most teams do not have a docs writing problem.
+They have a change detection problem.
 
-If checkout changes, if auth changes, if search changes, if onboarding changes, someone should know exactly which docs, guides, support answers, and release notes are now suspect.
+Checkout changes.
+Auth changes.
+Search changes.
+Onboarding changes.
 
-That is what this project does.
+Somewhere in the repo, docs, setup guides, support answers, and release notes are now wrong.
 
-It reads the diff, finds the likely blast radius in docs, and gives you evidence instead of vibes.
+This reads the diff, finds the likely blast radius, and shows the evidence.
 
 ## The Wedge
 
 This is not a generic docs chatbot.
 This is not "AI for content."
 
-This is a narrow product with a clear edge:
+This is one narrow product:
 
 - product code changes
 - docs drift appears immediately
 - the system points at the likely stale docs
 - the reviewer sees why
 
-That is enough to be useful on its own.
-And it is the right primitive for expanding into release notes, support updates, onboarding drift, and memory-backed learning later.
+That is enough to be useful by itself.
+It is also the right primitive for release notes, support updates, onboarding drift, and memory-backed learning later.
 
 ## What A User Sees
 
@@ -47,16 +52,15 @@ The point is to make docs drift visible while the PR is still open.
 
 ## Why Novyx Is Here
 
-The base product works fine as a deterministic scorer.
-
-Novyx Core Memory matters because over time you want the system to remember:
+The base product works as a deterministic scorer.
+Novyx Core Memory is here because over time the system should remember:
 
 - which predicted docs were actually correct
 - which suggestions reviewers rejected
 - which kinds of changes tend to affect support or onboarding
 - which code areas map to which docs in this repo
 
-That turns this from a stateless checker into a system that gets sharper on the repo it lives in.
+That turns it from a stateless checker into a repo-specific system that gets sharper over time.
 
 ## Who This Is For
 
