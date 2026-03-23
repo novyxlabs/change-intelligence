@@ -649,14 +649,6 @@ def rank_documents(
                         "Post-rank demotion: reference docs outrank broad index pages for tool-surface expansions"
                     ]
 
-    if is_security_fix(diff):
-        narrowed = []
-        for item in recommendations:
-            if int(item["confidence"]) >= 60:
-                narrowed.append(item)
-        if narrowed:
-            recommendations = narrowed[:3] + [item for item in recommendations if int(item["confidence"]) < 60]
-
     surface_targets = exact_surface_targets(diff, docs)
     if surface_targets:
         for item in recommendations:
@@ -693,6 +685,10 @@ def rank_documents(
         key=lambda item: (item["confidence"], item["score"]),
         reverse=True,
     )
+    if is_security_fix(diff):
+        narrowed = [item for item in recommendations if int(item["confidence"]) >= 60]
+        if narrowed:
+            recommendations = narrowed[:3] + [item for item in recommendations if int(item["confidence"]) < 60]
     return recommendations[:10]
 
 

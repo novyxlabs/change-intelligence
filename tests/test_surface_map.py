@@ -230,5 +230,50 @@ index 2222222..3333333 100644
         self.assertNotIn("/repos/{owner}/{repo}/installation", result["markdown"])
         self.assertNotIn("/api/dashboard", result["markdown"])
 
+    def test_security_narrowing_keeps_top_ranked_exact_surface_docs(self):
+        patch = """diff --git a/change_intelligence/github_client.py b/change_intelligence/github_client.py
+index 1111111..2222222 100644
+--- a/change_intelligence/github_client.py
++++ b/change_intelligence/github_client.py
+@@ -1,0 +1,2 @@
++token = response.json()["token"]
++request("GET /repos/{owner}/{repo}/installation")
+diff --git a/change_intelligence/server.py b/change_intelligence/server.py
+index 2222222..3333333 100644
+--- a/change_intelligence/server.py
++++ b/change_intelligence/server.py
+@@ -1,0 +1,3 @@
++# POST /v1/webhooks
++# GET /v1/webhooks/{webhook_id}
++# GET /v1/webhooks/{webhook_id}/deliveries
+"""
+        docs = [
+            {
+                "path": "docs/sdks/cli.md",
+                "relative_path": "sdks/cli.md",
+                "content": "# CLI\n\nAuthenticate with an API key and manage tokens from the command line.",
+            },
+            {
+                "path": "docs/errors.md",
+                "relative_path": "errors.md",
+                "content": "# Error Reference\n\nTroubleshoot auth, token, and request failures.",
+            },
+            {
+                "path": "docs/api-reference/webhooks.md",
+                "relative_path": "api-reference/webhooks.md",
+                "content": "# Webhooks\n\n## POST /v1/webhooks\n\nCreate a webhook.\n\n## GET /v1/webhooks/{webhook_id}\n\nRead a webhook.\n\n## GET /v1/webhooks/{webhook_id}/deliveries\n\nInspect delivery history.",
+            },
+            {
+                "path": "docs/index.md",
+                "relative_path": "index.md",
+                "content": "# Novyx Documentation\n\nOverview of APIs, SDKs, and guides.",
+            },
+        ]
+
+        result = analyze_patch(patch, docs=docs, repository="novyxlabs/change-intelligence")
+
+        self.assertEqual(result["recommendations"][0]["relative_path"], "api-reference/webhooks.md")
+        self.assertEqual(result["recommendations"][0]["confidence"], 100)
+
 if __name__ == "__main__":
     unittest.main()
