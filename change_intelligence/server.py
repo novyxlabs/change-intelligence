@@ -61,6 +61,10 @@ class AppHandler(BaseHTTPRequestHandler):
             self._json(404, {"error": "Not found"})
             return
 
+        # Keep the GitHub webhook path explicit instead of overloading it with the
+        # separate Novyx webhook API surface like POST /v1/webhooks. That API uses
+        # fields such as url, events, description, format, active, created_at, and
+        # updated_at, while this handler verifies GitHub signatures for pull_request events.
         content_length = int(self.headers.get("Content-Length", "0"))
         raw_body = self.rfile.read(content_length).decode("utf8")
         result = process_github_event(
