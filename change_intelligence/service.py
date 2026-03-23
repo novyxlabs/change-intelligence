@@ -80,6 +80,16 @@ def filter_comment_recommendations(recommendations: Sequence[Dict[str, object]],
         return []
 
     top_confidence = int(eligible[0].get("confidence", 0) or 0)
+    top_surface_count = int(eligible[0].get("surface_match_count", 0) or 0)
+    if top_surface_count > 0:
+        exact_matches = [
+            item
+            for item in eligible
+            if int(item.get("surface_match_count", 0) or 0) > 0
+        ]
+        if exact_matches:
+            return exact_matches[:3]
+
     pruned: List[Dict[str, object]] = []
     for item in eligible:
         confidence = int(item.get("confidence", 0) or 0)

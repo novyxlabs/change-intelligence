@@ -5,7 +5,11 @@ import unittest
 
 from change_intelligence.analysis import analyze_patch
 from change_intelligence.github_client import COMMENT_MARKER
-from change_intelligence.service import ServiceConfig, process_github_event
+from change_intelligence.service import (
+    ServiceConfig,
+    filter_comment_recommendations,
+    process_github_event,
+)
 
 
 FIXTURES = Path(__file__).resolve().parent.parent / "test" / "fixtures"
@@ -123,6 +127,20 @@ class BrokenGitHubClient(FakeGitHubClient):
 
 
 class ChangeIntelligenceServiceTests(unittest.TestCase):
+    def test_filter_comment_recommendations_keeps_exact_surface_docs_only_when_top_match_is_exact(self):
+        recommendations = [
+            {"relative_path": "api-reference/webhooks.md", "confidence": 92, "score": 347, "surface_match_count": 3, "evidence": ["Mentions changed routes or APIs: /v1/webhooks"]},
+            {"relative_path": "api-reference/anomalies.md", "confidence": 74, "score": 0, "surface_match_count": 1, "evidence": ["Mentions changed routes or APIs: /v1/webhooks"]},
+            {"relative_path": "mcp/tools-reference.md", "confidence": 80, "score": 135, "surface_match_count": 0, "evidence": ["Shared change terms with `change_intelligence/server.py`: api, webhook"]},
+        ]
+
+        pruned = filter_comment_recommendations(recommendations, threshold=60)
+
+        self.assertEqual(
+            [item["relative_path"] for item in pruned],
+            ["api-reference/webhooks.md", "api-reference/anomalies.md"],
+        )
+
     def test_analyze_patch_ranks_billing_doc(self):
         patch = (FIXTURES / "sample.patch").read_text(encoding="utf8")
         docs_root = FIXTURES / "repo" / "docs"
@@ -191,6 +209,62 @@ class ChangeIntelligenceServiceTests(unittest.TestCase):
         self.assertIn("The top doc mentions the changed symbols directly.", result["payload"]["comment_body"])
         self.assertTrue(any("Novyx remembers this exact changed file mapping" in line for line in result["payload"]["recommendations"][0]["evidence"]))
         self.assertEqual(result["payload"]["trace"]["evaluation"]["health_score"], 98)
+
+    def test_exact_route_evidence_survives_into_high_confidence_reasoning(self):
+        patch = """diff --git a/change_intelligence/server.py b/change_intelligence/server.py
+index 1111111..2222222 100644
+--- a/change_intelligence/server.py
++++ b/change_intelligence/server.py
+@@ -1,0 +1,3 @@
++# POST /v1/webhooks
++# GET /v1/webhooks/{webhook_id}
++# GET /v1/webhooks/{webhook_id}/deliveries
+"""
+        body = json.dumps(
+            {
+                "action": "opened",
+                "repository": {"full_name": "novyxlabs/change-intelligence"},
+                "pull_request": {"number": 3, "patch": patch},
+            }
+        )
+
+        class WebhookDocsGitHubClient(FakeGitHubClient):
+            def repo_docs(self, owner, repo, docs_path, ref, installation_id):
+                self.docs_requests.append((owner, repo, docs_path, ref, installation_id))
+                return [
+                    {
+                        "path": "docs/api-reference/webhooks.md",
+                        "relative_path": "api-reference/webhooks.md",
+                        "content": "# Webhooks\n\n## POST /v1/webhooks\n\nCreate a webhook.\n\n## GET /v1/webhooks/{webhook_id}\n\nRead a webhook.\n\n## GET /v1/webhooks/{webhook_id}/deliveries\n\nInspect delivery history.",
+                    },
+                    {
+                        "path": "docs/api-reference/anomalies.md",
+                        "relative_path": "api-reference/anomalies.md",
+                        "content": "# Anomalies\n\nWatch webhook anomalies from `/v1/webhooks`.",
+                    },
+                    {
+                        "path": "docs/mcp/tools-reference.md",
+                        "relative_path": "mcp/tools-reference.md",
+                        "content": "# Tools Reference\n\nGeneral MCP tool configuration and setup.",
+                    },
+                ]
+
+            def pull_request_files(self, owner, repo, pull_number, installation_id):
+                self.file_requests.append((owner, repo, pull_number, installation_id))
+                return [{"filename": "change_intelligence/server.py", "patch": "\n".join(patch.splitlines()[4:])}]
+
+        result = process_github_event(
+            body,
+            None,
+            ServiceConfig(
+                docs_root=FIXTURES / "repo" / "docs",
+                github_client=WebhookDocsGitHubClient(patch),
+                confidence_threshold=60,
+            ),
+        )
+
+        self.assertIn("Exact route or API surface matches were found in the top doc.", result["payload"]["comment_body"])
+        self.assertNotIn("### mcp/tools-reference.md", result["payload"]["comment_body"])
 
     def test_process_github_event_stays_silent_below_threshold(self):
         patch = (FIXTURES / "sample.patch").read_text(encoding="utf8")

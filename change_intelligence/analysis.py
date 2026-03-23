@@ -467,6 +467,38 @@ def build_draft_patch(doc: DocIndex, diff: DiffSummary, recommendation: Dict[str
     }
 
 
+def prioritize_evidence(evidence: Sequence[str]) -> List[str]:
+    priority_order = [
+        "Mentions changed routes or APIs:",
+        "Mentions changed symbols:",
+        "Ownership rule matched",
+        "Novyx remembers this exact changed file mapping",
+        "Past merged PRs reinforced",
+        "Past merges taught Novyx",
+        "Learned Novyx graph links",
+        "Domain match for this change:",
+        "Path references changed file basename",
+        "Shared path terms with",
+        "Shared change terms with",
+        "Historical change-pattern memories referenced",
+        "Post-rank boost:",
+        "Post-rank trim:",
+        "Post-rank demotion:",
+        "Confidence capped because",
+        "Reference-page prior:",
+        "Index-page penalty:",
+    ]
+
+    ranked = sorted(
+        dict.fromkeys(evidence),
+        key=lambda line: next(
+            (index for index, prefix in enumerate(priority_order) if str(line).startswith(prefix)),
+            len(priority_order),
+        ),
+    )
+    return ranked[:8]
+
+
 def score_document(
     diff: DiffSummary,
     doc: DocIndex,
@@ -605,7 +637,7 @@ def score_document(
         "relative_path": doc.relative_path,
         "score": score,
         "confidence": confidence,
-        "evidence": list(dict.fromkeys(evidence))[:6],
+        "evidence": prioritize_evidence(evidence),
         "surface_match_count": len(matching_surfaces),
         "surface_match_specificity": sum(surface_specificity(surface) for surface in matching_surfaces),
     }
