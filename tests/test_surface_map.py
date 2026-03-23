@@ -308,5 +308,42 @@ index 1111111..2222222 100644
             )
         )
 
+    def test_exact_surface_coverage_outranks_higher_confidence_stale_memory_match(self):
+        patch = """diff --git a/change_intelligence/server.py b/change_intelligence/server.py
+index 1111111..2222222 100644
+--- a/change_intelligence/server.py
++++ b/change_intelligence/server.py
+@@ -1,0 +1,3 @@
++# POST /v1/webhooks
++# GET /v1/webhooks/{webhook_id}
++# GET /v1/webhooks/{webhook_id}/deliveries
+"""
+        docs = [
+            {
+                "path": "docs/api-reference/anomalies.md",
+                "relative_path": "api-reference/anomalies.md",
+                "content": "# Anomalies\n\nWatch webhook anomalies from `/v1/webhooks`.",
+            },
+            {
+                "path": "docs/api-reference/webhooks.md",
+                "relative_path": "api-reference/webhooks.md",
+                "content": "# Webhooks\n\n## POST /v1/webhooks\n\nCreate a webhook.\n\n## GET /v1/webhooks/{webhook_id}\n\nRead a webhook.\n\n## GET /v1/webhooks/{webhook_id}/deliveries\n\nInspect delivery history.",
+            },
+        ]
+        learned_signals = {
+            "api-reference/anomalies.md": {"graph_hits": 6, "accepted_hits": 5, "rejected_hits": 0},
+            "api-reference/webhooks.md": {"graph_hits": 0, "accepted_hits": 0, "rejected_hits": 1},
+        }
+
+        result = analyze_patch(
+            patch,
+            docs=docs,
+            repository="novyxlabs/change-intelligence",
+            learned_signals=learned_signals,
+        )
+
+        self.assertEqual(result["recommendations"][0]["relative_path"], "api-reference/webhooks.md")
+        self.assertGreater(result["recommendations"][0]["score"], result["recommendations"][1]["score"])
+
 if __name__ == "__main__":
     unittest.main()

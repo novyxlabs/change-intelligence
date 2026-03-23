@@ -705,8 +705,45 @@ def rank_documents(
                     "Post-rank trim: exact route/API matches were found elsewhere, so weaker indirect matches were demoted"
                 ]
 
+        best_surface_count = max(
+            int(item.get("surface_match_count") or 0)
+            for item in recommendations
+            if str(item.get("relative_path") or "") in surface_targets
+        )
+        best_surface_specificity = max(
+            int(item.get("surface_match_specificity") or 0)
+            for item in recommendations
+            if str(item.get("relative_path") or "") in surface_targets
+        )
+        for item in recommendations:
+            relative_path = str(item.get("relative_path") or "")
+            if relative_path not in surface_targets:
+                continue
+            match_count = int(item.get("surface_match_count") or 0)
+            match_specificity = int(item.get("surface_match_specificity") or 0)
+            coverage_gap = max(0, best_surface_count - match_count)
+            specificity_gap = max(0, best_surface_specificity - match_specificity)
+            if coverage_gap == 0 and specificity_gap == 0:
+                continue
+            item["score"] = max(
+                0,
+                int(item["score"]) - (coverage_gap * 48) - min(72, specificity_gap),
+            )
+            item["confidence"] = min(
+                int(item["confidence"]),
+                max(68, 90 - (coverage_gap * 8)),
+            )
+            item["evidence"] = item["evidence"] + [
+                "Post-rank trim: narrower exact matches were demoted because another doc covers more of the changed API surface"
+            ]
+
     recommendations.sort(
-        key=lambda item: (item["confidence"], item["score"]),
+        key=lambda item: (
+            int(item.get("surface_match_count") or 0),
+            int(item.get("surface_match_specificity") or 0),
+            int(item["score"]),
+            int(item["confidence"]),
+        ),
         reverse=True,
     )
     if is_security_fix(diff):
