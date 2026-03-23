@@ -1,48 +1,68 @@
 # Change Intelligence
 
-`change-intelligence` is an open-source GitHub app that catches docs drift from product code changes.
+`change-intelligence` is a GitHub app for one job:
 
-It answers one concrete question:
-
-> When product code changes, identify likely affected docs and generate a reviewable update brief with evidence.
-
-That is the wedge.
-Not "generate docs from scratch."
-Not "AI knowledge management."
-Just: tell me which docs are now stale, why, and what probably needs to change.
+> when product code changes, tell me which docs are now wrong.
 
 The Python service under `change_intelligence/` is the only production runtime.
 The earlier Node implementation in `src/` remains as a reference CLI and fixture harness for the ranking logic, not as a deployed server.
 
 ## Why It Exists
 
-Most teams do not have a docs-writing problem.
-They have a docs-discovery problem.
+Most teams do not fail because nobody can write documentation.
+They fail because nobody notices documentation went stale until after users hit the broken path.
 
-When checkout, auth, search, billing, or onboarding flows change, the hard part is usually not writing a sentence. The hard part is knowing:
+If checkout changes, if auth changes, if search changes, if onboarding changes, someone should know exactly which docs, guides, support answers, and release notes are now suspect.
 
-- which docs are affected
-- whether the change touches an API surface, route, or setup step
-- what evidence justifies updating that doc
+That is what this project does.
 
-`change-intelligence` is built around that narrower, higher-leverage job.
+It reads the diff, finds the likely blast radius in docs, and gives you evidence instead of vibes.
+
+## The Wedge
+
+This is not a generic docs chatbot.
+This is not "AI for content."
+
+This is a narrow product with a clear edge:
+
+- product code changes
+- docs drift appears immediately
+- the system points at the likely stale docs
+- the reviewer sees why
+
+That is enough to be useful on its own.
+And it is the right primitive for expanding into release notes, support updates, onboarding drift, and memory-backed learning later.
 
 ## What A User Sees
 
-On a pull request, the system can post a reviewable brief that says:
+On a pull request, Change Intelligence can post a brief like:
 
 - these docs are probably stale
-- here is the evidence from the code diff
-- here are the changed routes, symbols, or files that caused the match
-- here is a draft release-note, support, or onboarding follow-up when confidence is high
+- these files, symbols, routes, or API surfaces caused the match
+- here is the evidence
+- here is a draft follow-up when confidence is high
 
-The goal is not to auto-merge content. The goal is to make stale docs obvious while the code is still under review.
+The point is not to auto-publish text.
+The point is to make docs drift visible while the PR is still open.
 
-## Who It Is For
+## Why Novyx Is Here
+
+The base product works fine as a deterministic scorer.
+
+Novyx Core Memory matters because over time you want the system to remember:
+
+- which predicted docs were actually correct
+- which suggestions reviewers rejected
+- which kinds of changes tend to affect support or onboarding
+- which code areas map to which docs in this repo
+
+That turns this from a stateless checker into a system that gets sharper on the repo it lives in.
+
+## Who This Is For
 
 - teams with product or API docs living near the code
 - repos where PRs frequently change behavior without updating docs
-- teams that want deterministic, evidence-first review signals before adding heavier AI layers
+- teams that want evidence-first review signals before they trust anything more automatic
 
 ## What It Does
 
@@ -56,16 +76,6 @@ The goal is not to auto-merge content. The goal is to make stale docs obvious wh
 - Generates adjacent support-knowledge and onboarding/tour update drafts when the repo has those audience-specific docs
 - Stores patterns, triples, and audit traces in Novyx so the system gets smarter over time
 - Emits the same result as JSON for GitHub webhook integration
-
-## Why This Wedge
-
-Most repos can generate docs. Fewer can tell you which docs are now stale and why. That is the highest-leverage primitive for a broader system that later updates:
-
-- docs
-- changelogs
-- onboarding tours
-- support answers
-- release notes
 
 ## Try It In Two Minutes
 
