@@ -50,6 +50,36 @@ On a pull request, Change Intelligence can post a brief like:
 The point is not to auto-publish text.
 The point is to make docs drift visible while the PR is still open.
 
+Example PR comment:
+
+```md
+## Change Intelligence
+
+Repository: `acme/app`
+Pull request: #42
+Confidence threshold: `60`
+
+### Similar Historical Patterns
+
+- `src/billing/createCheckoutSession.ts` changed -> `docs/billing.md` was accepted after merge (score: 0.9)
+
+### Likely Stale Docs
+
+1. `docs/billing.md`
+   - matched changed file path: `src/billing/createCheckoutSession.ts`
+   - matched symbol: `createCheckoutSession`
+   - matched route/API surface: `/checkout/session`
+
+### Update Focus
+
+- explain coupon behavior in checkout flow
+- note new request fields and API behavior
+- update setup or support docs if coupon support changes failure modes
+
+---
+Reply with `/ci correct`, `/ci wrong-doc`, or `/ci missed-doc`.
+```
+
 ## Why Novyx Is Here
 
 The base product works as a deterministic scorer.
