@@ -78,6 +78,7 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(payload["metrics"]["hotspots"][0]["area"], "src/billing")
         self.assertEqual(payload["metrics"]["hotspots"][0]["top_doc"], "billing.md")
         self.assertEqual(payload["metrics"]["confidence_tiers"]["counts"]["review_recommended"], 1)
+        self.assertEqual(payload["metrics"]["case_studies"][0]["top_doc"], "billing.md")
         self.assertEqual(payload["errors"], [])
 
     def test_build_dashboard_payload_surfaces_partial_errors(self):
@@ -93,6 +94,7 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("Change Intelligence Dashboard", html)
         self.assertIn("Recent Analysis Runs", html)
         self.assertIn("Drift Hotspots", html)
+        self.assertIn("Proof Candidates", html)
         self.assertIn("Recent confidence mix", html)
         self.assertIn("novyxlabs/novyx-core", html)
         self.assertIn("billing.md", html)

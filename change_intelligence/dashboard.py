@@ -190,6 +190,23 @@ def _render_hotspot_rows(hotspots: object) -> str:
     )
 
 
+def _render_case_study_rows(case_studies: object) -> str:
+    if not isinstance(case_studies, list) or not case_studies:
+        return "<tr><td colspan='7'>No accepted proof points yet.</td></tr>"
+    return "".join(
+        "<tr>"
+        f"<td>{_format_value(item.get('repository'))}</td>"
+        f"<td>{_format_value(item.get('pull_request_number'))}</td>"
+        f"<td>{_format_value(item.get('changed_file'))}</td>"
+        f"<td>{_format_value(item.get('top_doc'))}</td>"
+        f"<td>{_format_value(item.get('top_confidence'))}</td>"
+        f"<td>{_format_value(item.get('confidence_tier'))}</td>"
+        f"<td>{_format_value(item.get('created_at'))}</td>"
+        "</tr>"
+        for item in case_studies[:5]
+    )
+
+
 def render_dashboard_html(payload: Dict[str, object]) -> str:
     metrics = payload.get("metrics")
     metrics = metrics if isinstance(metrics, dict) else {}
@@ -262,6 +279,13 @@ def render_dashboard_html(payload: Dict[str, object]) -> str:
         <table>
           <thead><tr><th>Repository</th><th>Area</th><th>Runs</th><th>Common doc</th><th>False-positive</th><th>Miss rate</th><th>Wrong doc</th><th>Missed doc</th></tr></thead>
           <tbody>{_render_hotspot_rows(metrics.get("hotspots"))}</tbody>
+        </table>
+      </section>
+      <section class="panel">
+        <h2>Proof Candidates</h2>
+        <table>
+          <thead><tr><th>Repository</th><th>PR</th><th>Changed file</th><th>Top doc</th><th>Confidence</th><th>Tier</th><th>Verified</th></tr></thead>
+          <tbody>{_render_case_study_rows(metrics.get("case_studies"))}</tbody>
         </table>
       </section>
       <section class="panel">

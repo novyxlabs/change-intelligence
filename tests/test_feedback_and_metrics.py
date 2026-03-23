@@ -147,10 +147,56 @@ class FeedbackAndMetricsTests(unittest.TestCase):
                 {"tags": ["ci-feedback", "missed-doc"], "context": "novyxlabs/novyx-mcp#3"},
             ],
             runs=[
-                {"tags": ["analysis-run", "silent", "suppressed"], "context": "novyxlabs/novyx-core#1", "created_at": "2026-03-18T09:00:00Z"},
-                {"tags": ["analysis-run", "review-recommended", "commented"], "context": "novyxlabs/novyx-core#1", "created_at": "2026-03-18T11:00:00Z"},
-                {"tags": ["analysis-run", "high-confidence", "commented"], "context": "novyxlabs/novyx-core#2"},
-                {"tags": ["analysis-run", "silent", "suppressed"], "context": "novyxlabs/novyx-mcp#3"},
+                {
+                    "tags": ["analysis-run", "silent", "suppressed"],
+                    "context": "novyxlabs/novyx-core#1",
+                    "created_at": "2026-03-18T09:00:00Z",
+                    "metadata": {
+                        "repository": "novyxlabs/novyx-core",
+                        "pull_request_number": 1,
+                        "changed_files": ["src/billing/createCheckoutSession.ts"],
+                        "top_doc": "billing.md",
+                        "top_confidence": 42,
+                        "confidence_tier": "silent",
+                    },
+                },
+                {
+                    "tags": ["analysis-run", "review-recommended", "commented"],
+                    "context": "novyxlabs/novyx-core#1",
+                    "created_at": "2026-03-18T11:00:00Z",
+                    "metadata": {
+                        "repository": "novyxlabs/novyx-core",
+                        "pull_request_number": 1,
+                        "changed_files": ["src/billing/createCheckoutSession.ts"],
+                        "top_doc": "billing.md",
+                        "top_confidence": 84,
+                        "confidence_tier": "review-recommended",
+                    },
+                },
+                {
+                    "tags": ["analysis-run", "high-confidence", "commented"],
+                    "context": "novyxlabs/novyx-core#2",
+                    "metadata": {
+                        "repository": "novyxlabs/novyx-core",
+                        "pull_request_number": 2,
+                        "changed_files": ["src/api/search.py"],
+                        "top_doc": "search-reference.md",
+                        "top_confidence": 96,
+                        "confidence_tier": "high-confidence",
+                    },
+                },
+                {
+                    "tags": ["analysis-run", "silent", "suppressed"],
+                    "context": "novyxlabs/novyx-mcp#3",
+                    "metadata": {
+                        "repository": "novyxlabs/novyx-mcp",
+                        "pull_request_number": 3,
+                        "changed_files": ["memory/health/cache.py"],
+                        "top_doc": "memory-health.md",
+                        "top_confidence": 33,
+                        "confidence_tier": "silent",
+                    },
+                },
             ],
         )
         metrics = compute_metrics(store)
@@ -163,6 +209,7 @@ class FeedbackAndMetricsTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["confidence_tiers"]["high_confidence_rate"], 1 / 3)
         self.assertAlmostEqual(metrics["confidence_tiers"]["silent_rate"], 1 / 3)
         self.assertEqual(metrics["trend"]["top_1_rate"], "flat")
+        self.assertEqual(metrics["case_studies"][0]["top_doc"], "billing.md")
         self.assertEqual(metrics["proof_window"]["remaining_to_minimum"], 17)
         self.assertFalse(metrics["proof_window"]["ready_for_case_study"])
         self.assertEqual(metrics["proof_window"]["unique_prs"], 3)

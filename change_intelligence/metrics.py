@@ -146,6 +146,57 @@ def summarize_trend(feedback: Iterable[Dict[str, object]], runs: Iterable[Dict[s
     }
 
 
+def summarize_case_studies(feedback: Iterable[Dict[str, object]], runs: Iterable[Dict[str, object]]) -> List[Dict[str, object]]:
+    latest_feedback = collapse_latest_by_context(feedback)
+    latest_runs = collapse_latest_by_context(runs)
+    run_by_context = {
+        item.get("context"): item
+        for item in latest_runs
+        if isinstance(item.get("context"), str)
+    }
+    case_studies: List[Dict[str, object]] = []
+
+    for item in latest_feedback:
+        tags = set(item.get("tags") or [])
+        if "correct" not in tags:
+            continue
+        context = item.get("context")
+        run = run_by_context.get(context)
+        if not run:
+            continue
+        run_tags = set(run.get("tags") or [])
+        if "commented" not in run_tags:
+            continue
+        metadata = metadata_for(run)
+        changed_files = metadata.get("changed_files")
+        top_doc = metadata.get("top_doc")
+        repository = repository_for(run)
+        if not isinstance(top_doc, str) or not top_doc:
+            continue
+        case_studies.append(
+            {
+                "repository": repository,
+                "pull_request_number": metadata.get("pull_request_number"),
+                "area": area_for_changed_files(changed_files),
+                "changed_file": changed_files[0] if isinstance(changed_files, list) and changed_files else None,
+                "top_doc": top_doc,
+                "top_confidence": metadata.get("top_confidence"),
+                "confidence_tier": metadata.get("confidence_tier"),
+                "commenter": metadata_for(item).get("commenter"),
+                "created_at": memory_sort_key(item) or memory_sort_key(run),
+            }
+        )
+
+    case_studies.sort(
+        key=lambda item: (
+            int(item.get("top_confidence") or 0),
+            str(item.get("created_at") or ""),
+        ),
+        reverse=True,
+    )
+    return case_studies[:5]
+
+
 def summarize_hotspots(feedback: Iterable[Dict[str, object]], runs: Iterable[Dict[str, object]]) -> List[Dict[str, object]]:
     latest_feedback = collapse_latest_by_context(feedback)
     latest_runs = collapse_latest_by_context(runs)
@@ -224,6 +275,7 @@ def compute_metrics(store: NovyxStore, limit: int = 500) -> dict[str, object]:
     metrics = summarize(feedback, runs)
     metrics["confidence_tiers"] = summarize_confidence_tiers(runs)
     metrics["trend"] = summarize_trend(feedback, runs)
+    metrics["case_studies"] = summarize_case_studies(feedback, runs)
     metrics["novyx"] = {
         "eval": {},
         "audit": {},
