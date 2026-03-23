@@ -194,6 +194,7 @@ class NovyxStore:
         support_updates: Optional[Dict[str, object]] = None,
         onboarding_updates: Optional[Dict[str, object]] = None,
         summary: Optional[Dict[str, object]] = None,
+        side_effects: Optional[Dict[str, Dict[str, object]]] = None,
     ) -> Dict[str, object]:
         trace = self.client.trace_create(
             self.config.agent_id,
@@ -300,6 +301,7 @@ class NovyxStore:
             confidence_tier=confidence_tier,
             comment_suppressed=comment_suppressed,
             head_sha=head_sha,
+            side_effects=side_effects,
         )
 
         evaluation = self._evaluation_snapshot()
@@ -383,14 +385,31 @@ class NovyxStore:
         confidence_tier: str,
         comment_suppressed: bool,
         head_sha: Optional[str],
+        side_effects: Optional[Dict[str, Dict[str, object]]] = None,
     ) -> Dict[str, object]:
         top = recommendations[0] if recommendations else {}
         sha_label = f"@{head_sha[:12]}" if head_sha else ""
+        comment_effect = (side_effects or {}).get("github_comment") or {}
+        novyx_effect = (side_effects or {}).get("novyx_record") or {}
         try:
             return self._remember(
                 f"Analysis run for {repository}#{pull_request_number}{sha_label}: {confidence_tier}",
                 importance=6 if confidence_tier == "high-confidence" else 5,
-                tags=["analysis-run", confidence_tier, "suppressed" if comment_suppressed else "commented"],
+                tags=[
+                    "analysis-run",
+                    confidence_tier,
+                    "suppressed" if comment_suppressed else "commented",
+                    *(
+                        ["github-comment-failed"]
+                        if comment_effect.get("status") == "failed"
+                        else []
+                    ),
+                    *(
+                        ["novyx-record-failed"]
+                        if novyx_effect.get("status") == "failed"
+                        else []
+                    ),
+                ],
                 context=f"{repository}#{pull_request_number}",
                 metadata={
                     "repository": repository,
@@ -402,6 +421,10 @@ class NovyxStore:
                     "top_doc": top.get("relative_path"),
                     "top_confidence": top.get("confidence"),
                     "recommendation_count": len(recommendations),
+                    "github_comment_status": comment_effect.get("status"),
+                    "github_comment_error": comment_effect.get("error"),
+                    "novyx_record_status": novyx_effect.get("status"),
+                    "novyx_record_error": novyx_effect.get("error"),
                 },
             )
         except NovyxError as error:

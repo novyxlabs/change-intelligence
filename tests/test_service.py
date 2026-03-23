@@ -108,6 +108,14 @@ class FakeGitHubClient:
         self.deleted_comments.append((owner, repo, issue_number, installation_id))
         return {"id": 99, "deleted": True}
 
+    def auth_mode(self):
+        return "app"
+
+
+class BrokenGitHubClient(FakeGitHubClient):
+    def upsert_issue_comment(self, owner, repo, issue_number, installation_id, body):
+        raise RuntimeError("comment write failed")
+
 
 class ChangeIntelligenceServiceTests(unittest.TestCase):
     def test_analyze_patch_ranks_billing_doc(self):
@@ -169,6 +177,8 @@ class ChangeIntelligenceServiceTests(unittest.TestCase):
         self.assertEqual(record_call[5]["release_notes"]["recommended_docs"][0], "billing.md")
         self.assertEqual(record_call[5]["release_notes"]["confidence"], result["payload"]["release_notes"]["confidence"])
         self.assertEqual(github_client.comments[0][2], 42)
+        self.assertEqual(result["payload"]["side_effects"]["github_comment"]["status"], "commented")
+        self.assertEqual(result["payload"]["auth_mode"], "app")
         self.assertIn("### What Changed", result["payload"]["comment_body"])
         self.assertIn("### Why This Is High Confidence", result["payload"]["comment_body"])
         self.assertIn("### Risk If Ignored", result["payload"]["comment_body"])
@@ -213,8 +223,35 @@ class ChangeIntelligenceServiceTests(unittest.TestCase):
         self.assertTrue(result["payload"]["comment_suppressed"])
         self.assertEqual(result["payload"]["confidence_tier"], "silent")
         self.assertEqual(result["payload"]["comment"]["deleted"], True)
+        self.assertEqual(result["payload"]["side_effects"]["github_comment"]["status"], "cleared")
         self.assertIsNone(result["payload"]["comment_body"])
         self.assertEqual(github_client.deleted_comments[0][2], 42)
+
+    def test_process_github_event_captures_comment_write_failures_without_crashing(self):
+        patch = (FIXTURES / "sample.patch").read_text(encoding="utf8")
+        body = json.dumps(
+            {
+                "action": "opened",
+                "repository": {"full_name": "acme/app"},
+                "pull_request": {"number": 42, "patch": patch},
+            }
+        )
+        result = process_github_event(
+            body,
+            None,
+            ServiceConfig(
+                docs_root=FIXTURES / "repo" / "docs",
+                novyx_store=FakeNovyxStore(),
+                github_client=BrokenGitHubClient(patch),
+                confidence_threshold=60,
+            ),
+        )
+
+        self.assertEqual(result["status_code"], 200)
+        self.assertFalse(result["payload"]["comment_suppressed"])
+        self.assertIsNone(result["payload"]["comment"])
+        self.assertEqual(result["payload"]["side_effects"]["github_comment"]["status"], "failed")
+        self.assertIn("comment write failed", result["payload"]["side_effects"]["github_comment"]["error"])
 
     def test_process_github_event_uses_top_level_number_from_real_github_payload(self):
         patch = (FIXTURES / "sample.patch").read_text(encoding="utf8")

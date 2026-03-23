@@ -175,6 +175,8 @@ class FeedbackAndMetricsTests(unittest.TestCase):
                         "top_doc": "billing.md",
                         "top_confidence": 84,
                         "confidence_tier": "review-recommended",
+                        "github_comment_status": "failed",
+                        "auth_mode": "token",
                     },
                 },
                 {
@@ -212,6 +214,9 @@ class FeedbackAndMetricsTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["false_positive_rate"], 1 / 2)
         self.assertAlmostEqual(metrics["confidence_tiers"]["high_confidence_rate"], 1 / 3)
         self.assertAlmostEqual(metrics["confidence_tiers"]["silent_rate"], 1 / 3)
+        self.assertEqual(metrics["side_effects"]["counts"]["comment_failures"], 1)
+        self.assertEqual(metrics["side_effects"]["counts"]["token_auth_runs"], 1)
+        self.assertTrue(any("GitHub comment writes failed" in item["message"] for item in metrics["alerts"]))
         self.assertEqual(metrics["trend"]["top_1_rate"], "flat")
         self.assertEqual(metrics["case_studies"][0]["top_doc"], "billing.md")
         self.assertEqual(metrics["proof_window"]["remaining_to_minimum"], 17)

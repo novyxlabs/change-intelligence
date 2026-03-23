@@ -75,7 +75,21 @@ def normalize_doc_path(path: str, docs_path: str) -> str:
 
 
 def filter_comment_recommendations(recommendations: Sequence[Dict[str, object]], threshold: int) -> List[Dict[str, object]]:
-    return [item for item in recommendations if int(item.get("confidence", 0)) >= threshold]
+    eligible = [item for item in recommendations if int(item.get("confidence", 0)) >= threshold]
+    if not eligible:
+        return []
+
+    top_confidence = int(eligible[0].get("confidence", 0) or 0)
+    pruned: List[Dict[str, object]] = []
+    for item in eligible:
+        confidence = int(item.get("confidence", 0) or 0)
+        evidence = item.get("evidence") or []
+        has_exact_surface = any("Mentions changed routes or APIs:" in str(line) for line in evidence)
+        if item is eligible[0] or has_exact_surface or confidence >= top_confidence - 12:
+            pruned.append(item)
+        if len(pruned) >= 5:
+            break
+    return pruned
 
 
 def classify_confidence_tier(recommendations: Sequence[Dict[str, object]], threshold: int) -> str:
@@ -239,7 +253,7 @@ def build_comment(
 
     if patterns:
         lines.extend(["### Similar Historical Patterns", ""])
-        for item in patterns[:5]:
+        for item in patterns[:3]:
             lines.append(
                 f"- {item['observation']}"
                 + (f" (score: {item['score']})" if item.get("score") is not None else "")
@@ -411,6 +425,10 @@ def finalize_event_response(
     comment_suppressed = len(comment_recommendations) == 0
     comment_body = None
     comment = None
+    side_effects = {
+        "novyx_record": {"ok": config.novyx_store is None, "status": "disabled" if config.novyx_store is None else "pending"},
+        "github_comment": {"ok": config.github_client is None, "status": "disabled" if config.github_client is None else "pending"},
+    }
 
     trace = None
     if config.novyx_store is not None:
@@ -431,9 +449,12 @@ def finalize_event_response(
                 support_updates=analysis["support_updates"],
                 onboarding_updates=analysis["onboarding_updates"],
                 summary=analysis["summary"],
+                side_effects=side_effects,
             )
+            side_effects["novyx_record"] = {"ok": True, "status": "recorded"}
         except Exception:
             trace = None
+            side_effects["novyx_record"] = {"ok": False, "status": "failed", "error": "record_analysis_failed"}
 
     if not comment_suppressed:
         comment_body = build_comment(
@@ -447,20 +468,32 @@ def finalize_event_response(
             analysis["onboarding_updates"],
         )
         if config.github_client is not None and context.pull_request_number:
-            comment = config.github_client.upsert_issue_comment(
+            try:
+                comment = config.github_client.upsert_issue_comment(
+                    context.owner,
+                    context.repo,
+                    context.pull_request_number,
+                    context.installation_id,
+                    comment_body,
+                )
+                side_effects["github_comment"] = {"ok": True, "status": "commented"}
+            except Exception as error:
+                comment = None
+                side_effects["github_comment"] = {"ok": False, "status": "failed", "error": str(error)}
+    elif config.github_client is not None and context.pull_request_number:
+        try:
+            comment = config.github_client.clear_issue_comment(
                 context.owner,
                 context.repo,
                 context.pull_request_number,
                 context.installation_id,
-                comment_body,
             )
-    elif config.github_client is not None and context.pull_request_number:
-        comment = config.github_client.clear_issue_comment(
-            context.owner,
-            context.repo,
-            context.pull_request_number,
-            context.installation_id,
-        )
+            side_effects["github_comment"] = {"ok": True, "status": "cleared" if comment else "no-comment"}
+        except Exception as error:
+            comment = None
+            side_effects["github_comment"] = {"ok": False, "status": "failed", "error": str(error)}
+    elif config.github_client is None:
+        side_effects["github_comment"] = {"ok": True, "status": "disabled"}
 
     return {
         "status_code": 200,
@@ -483,6 +516,8 @@ def finalize_event_response(
             "comment_suppressed": comment_suppressed,
             "confidence_tier": confidence_tier,
             "confidence_threshold": config.confidence_threshold,
+            "side_effects": side_effects,
+            "auth_mode": config.github_client.auth_mode() if config.github_client is not None else "none",
         },
     }
 

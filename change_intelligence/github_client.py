@@ -49,6 +49,13 @@ class GitHubClient:
             )
         )
 
+    def auth_mode(self) -> str:
+        if self.config.app_id and self.config.private_key:
+            return "app"
+        if self.config.token:
+            return "token"
+        return "none"
+
     def _request(
         self,
         method: str,

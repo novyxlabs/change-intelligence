@@ -20,6 +20,13 @@ System of record:
 - analysis-run outcomes are stored in Novyx by `change_intelligence/novyx_store.py`
 - daily KPI computation runs from `change_intelligence/metrics.py`
 
+Production guardrails:
+
+- GitHub comment-write failures must be surfaced as alerts, not just logs
+- Novyx record/write failures must be surfaced as alerts, not just suppressed
+- GitHub App auth is the preferred production mode; token auth should show as a dashboard warning until replaced
+- PR comments should stay pruned to the sharpest likely docs, not the entire long tail of indirect matches
+
 Reporting rule:
 
 - do not quote metrics publicly until the window has at least `20` analyzed PRs

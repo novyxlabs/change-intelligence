@@ -60,7 +60,7 @@ def _safe_list_memories(store, tags: List[str], limit: int, label: str, errors: 
     return [item for item in memories if isinstance(item, dict)]
 
 
-def build_dashboard_payload(store, limit: int = 25) -> dict[str, object]:
+def build_dashboard_payload(store, limit: int = 25, service_config=None) -> dict[str, object]:
     generated_at = datetime.now(timezone.utc).isoformat()
 
     if store is None:
@@ -92,6 +92,7 @@ def build_dashboard_payload(store, limit: int = 25) -> dict[str, object]:
         "recent_runs": normalized_runs,
         "recent_feedback": normalized_feedback,
         "errors": errors,
+        "auth_mode": service_config.github_client.auth_mode() if service_config and service_config.github_client else "none",
     }
 
 
@@ -207,6 +208,19 @@ def _render_case_study_rows(case_studies: object) -> str:
     )
 
 
+def _render_alerts(alerts: object) -> str:
+    if not isinstance(alerts, list) or not alerts:
+        return "<p class='meta'>No current production alerts.</p>"
+    items = []
+    for item in alerts[:5]:
+        if not isinstance(item, dict):
+            continue
+        items.append(
+            f"<li><strong>{escape(str(item.get('severity', 'info')).upper())}</strong>: {escape(str(item.get('message', '')))}</li>"
+        )
+    return "<ul>" + "".join(items) + "</ul>" if items else "<p class='meta'>No current production alerts.</p>"
+
+
 def render_dashboard_html(payload: Dict[str, object]) -> str:
     metrics = payload.get("metrics")
     metrics = metrics if isinstance(metrics, dict) else {}
@@ -216,6 +230,7 @@ def render_dashboard_html(payload: Dict[str, object]) -> str:
     novyx = novyx if isinstance(novyx, dict) else {}
     proof_window = metrics.get("proof_window")
     proof_window = proof_window if isinstance(proof_window, dict) else {}
+    auth_mode = payload.get("auth_mode")
 
     error_html = ""
     if errors:
@@ -266,6 +281,12 @@ def render_dashboard_html(payload: Dict[str, object]) -> str:
         <p>Eval history: {_format_value((novyx.get("eval") or {}).get("history_count"))}. Audit entries: {_format_value((novyx.get("audit") or {}).get("entry_count"))}.</p>
         <p class="meta">Latest eval: {_format_value((novyx.get("eval") or {}).get("latest"))}</p>
         <p class="meta">Drift: {_format_value((novyx.get("eval") or {}).get("drift"))}</p>
+      </section>
+      <section class="panel">
+        <h2>Production Alerts</h2>
+        {_render_alerts(metrics.get("alerts"))}
+        <p class="meta">GitHub auth mode: {_format_value(auth_mode)}. GitHub App auth is preferred for production comment writes.</p>
+        <p class="meta">Recent side-effect failures: GitHub comment {_format_percent((metrics.get("side_effects") or {}).get("comment_failure_rate"))}, Novyx record {_format_percent((metrics.get("side_effects") or {}).get("novyx_failure_rate"))}.</p>
       </section>
       <section class="panel">
         <h2>Per-Repo Metrics</h2>

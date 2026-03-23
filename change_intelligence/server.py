@@ -45,13 +45,13 @@ class AppHandler(BaseHTTPRequestHandler):
             if not self._dashboard_authorized():
                 self._json(401, {"error": "Unauthorized"})
                 return
-            self._json(200, build_dashboard_payload(self.config.novyx_store))
+            self._json(200, build_dashboard_payload(self.config.novyx_store, service_config=self.config))
             return
         if self.path == "/dashboard":
             if not self._dashboard_authorized():
                 self._json(401, {"error": "Unauthorized"})
                 return
-            payload = build_dashboard_payload(self.config.novyx_store)
+            payload = build_dashboard_payload(self.config.novyx_store, service_config=self.config)
             self._html(200, render_dashboard_html(payload))
             return
         self._json(404, {"error": "Not found"})

@@ -7,6 +7,7 @@ from typing import Optional
 from change_intelligence.dashboard import build_dashboard_payload, render_dashboard_html
 from change_intelligence.server import AppHandler
 from change_intelligence.service import ServiceConfig
+from change_intelligence.github_client import GitHubClient, GitHubConfig
 
 
 class FakeStore:
@@ -41,6 +42,9 @@ class FakeStore:
                     "comment_suppressed": False,
                     "recommendation_count": 3,
                     "changed_files": ["src/billing/createCheckoutSession.ts"],
+                    "github_comment_status": "commented",
+                    "novyx_record_status": "recorded",
+                    "auth_mode": "token",
                 },
             }
         ]
@@ -79,6 +83,8 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(payload["metrics"]["hotspots"][0]["top_doc"], "billing.md")
         self.assertEqual(payload["metrics"]["confidence_tiers"]["counts"]["review_recommended"], 1)
         self.assertEqual(payload["metrics"]["case_studies"][0]["top_doc"], "billing.md")
+        self.assertEqual(payload["metrics"]["side_effects"]["counts"]["token_auth_runs"], 1)
+        self.assertEqual(payload["auth_mode"], "none")
         self.assertEqual(payload["errors"], [])
 
     def test_build_dashboard_payload_surfaces_partial_errors(self):
@@ -90,11 +96,23 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("recent_runs: analysis history unavailable", payload["errors"])
 
     def test_render_dashboard_html_includes_core_sections(self):
-        html = render_dashboard_html(build_dashboard_payload(FakeStore(), limit=10))
+        html = render_dashboard_html(
+            build_dashboard_payload(
+                FakeStore(),
+                limit=10,
+                service_config=ServiceConfig(
+                    docs_root=".",
+                    novyx_store=FakeStore(),
+                    github_client=GitHubClient(GitHubConfig(token="gho_example")),
+                ),
+            )
+        )
         self.assertIn("Change Intelligence Dashboard", html)
         self.assertIn("Recent Analysis Runs", html)
         self.assertIn("Drift Hotspots", html)
         self.assertIn("Proof Candidates", html)
+        self.assertIn("Production Alerts", html)
+        self.assertIn("GitHub auth mode: token", html)
         self.assertIn("Recent confidence mix", html)
         self.assertIn("novyxlabs/novyx-core", html)
         self.assertIn("billing.md", html)

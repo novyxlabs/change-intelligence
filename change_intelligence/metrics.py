@@ -114,6 +114,51 @@ def summarize_confidence_tiers(runs: Iterable[Dict[str, object]]) -> Dict[str, o
     }
 
 
+def summarize_side_effects(runs: Iterable[Dict[str, object]]) -> Dict[str, object]:
+    runs = collapse_latest_by_context(runs)
+    total = len(runs)
+    comment_failures = 0
+    novyx_failures = 0
+    token_auth_runs = 0
+    for item in runs:
+        tags = set(item.get("tags") or [])
+        metadata = metadata_for(item)
+        if "github-comment-failed" in tags or metadata.get("github_comment_status") == "failed":
+            comment_failures += 1
+        if "novyx-record-failed" in tags or metadata.get("novyx_record_status") == "failed":
+            novyx_failures += 1
+        if metadata.get("auth_mode") == "token":
+            token_auth_runs += 1
+    return {
+        "comment_failure_rate": compute_rate(comment_failures, total),
+        "novyx_failure_rate": compute_rate(novyx_failures, total),
+        "token_auth_rate": compute_rate(token_auth_runs, total),
+        "counts": {
+            "comment_failures": comment_failures,
+            "novyx_failures": novyx_failures,
+            "token_auth_runs": token_auth_runs,
+        },
+    }
+
+
+def summarize_alerts(metrics: Dict[str, object]) -> List[Dict[str, object]]:
+    alerts: List[Dict[str, object]] = []
+    side_effects = metrics.get("side_effects") or {}
+    if isinstance(side_effects, dict):
+        counts = side_effects.get("counts") or {}
+        if int(counts.get("comment_failures", 0) or 0) > 0:
+            alerts.append({"severity": "high", "message": "GitHub comment writes failed on recent analysis runs."})
+        if int(counts.get("novyx_failures", 0) or 0) > 0:
+            alerts.append({"severity": "medium", "message": "Novyx recording failed on recent analysis runs."})
+        if int(counts.get("token_auth_runs", 0) or 0) > 0:
+            alerts.append({"severity": "medium", "message": "Runtime is using token auth; GitHub App auth is preferred for production."})
+    if float(metrics.get("false_positive_rate", 0.0) or 0.0) >= 0.35:
+        alerts.append({"severity": "medium", "message": "False-positive rate is still high enough to erode trust."})
+    if float(metrics.get("top_1_rate", 0.0) or 0.0) < 0.5 and int(metrics.get("feedback_total", 0) or 0) >= 5:
+        alerts.append({"severity": "medium", "message": "Top-1 correctness is still below the trust threshold."})
+    return alerts[:5]
+
+
 def metric_delta_label(recent: float, baseline: float) -> str:
     delta = recent - baseline
     if abs(delta) < 0.001:
@@ -387,6 +432,7 @@ def compute_metrics(store: NovyxStore, limit: int = 500) -> dict[str, object]:
 
     metrics = summarize(feedback, runs)
     metrics["confidence_tiers"] = summarize_confidence_tiers(runs)
+    metrics["side_effects"] = summarize_side_effects(runs)
     metrics["trend"] = summarize_trend(feedback, runs)
     metrics["case_studies"] = summarize_case_studies(feedback, runs)
     metrics["novyx"] = {
@@ -458,6 +504,7 @@ def compute_metrics(store: NovyxStore, limit: int = 500) -> dict[str, object]:
         "ready_for_case_study": analysis_runs >= 20,
         "window_complete": 20 <= analysis_runs <= 30,
     }
+    metrics["alerts"] = summarize_alerts(metrics)
     return metrics
 
 
