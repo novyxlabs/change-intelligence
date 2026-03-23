@@ -9,6 +9,7 @@ from change_intelligence.analysis import analyze_patch
 from change_intelligence.github_client import COMMENT_MARKER
 from change_intelligence.service import (
     ServiceConfig,
+    filter_comment_patterns,
     filter_comment_recommendations,
     process_github_event,
 )
@@ -142,6 +143,20 @@ class ChangeIntelligenceServiceTests(unittest.TestCase):
             [item["relative_path"] for item in pruned],
             ["api-reference/webhooks.md"],
         )
+
+    def test_filter_comment_patterns_drops_irrelevant_history_for_exact_surface_match(self):
+        patterns = [
+            {"observation": "change_intelligence/server.py changed -> index.md was predicted for docs review", "score": 0.7},
+            {"observation": "change_intelligence/server.py changed -> api-reference/webhooks.md was predicted for docs review", "score": 0.8},
+        ]
+        recommendations = [
+            {"relative_path": "api-reference/webhooks.md", "surface_match_count": 3, "confidence": 92, "score": 347}
+        ]
+
+        filtered = filter_comment_patterns(patterns, recommendations)
+
+        self.assertEqual(len(filtered), 1)
+        self.assertIn("api-reference/webhooks.md", filtered[0]["observation"])
 
     def test_analyze_patch_ranks_billing_doc(self):
         patch = (FIXTURES / "sample.patch").read_text(encoding="utf8")

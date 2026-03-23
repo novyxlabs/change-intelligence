@@ -4,7 +4,12 @@ from io import BytesIO
 from types import SimpleNamespace
 from typing import Optional
 
-from change_intelligence.dashboard import build_dashboard_payload, render_dashboard_html
+from change_intelligence.dashboard import (
+    build_dashboard_payload,
+    build_public_proof_payload,
+    render_dashboard_html,
+    render_public_proof_html,
+)
 from change_intelligence.server import AppHandler
 from change_intelligence.service import ServiceConfig
 from change_intelligence.github_client import GitHubClient, GitHubConfig
@@ -19,6 +24,8 @@ class FakeStore:
                 "created_at": "2026-03-22T12:01:00Z",
                 "metadata": {
                     "repository": "novyxlabs/novyx-core",
+                    "docs_repo": "novyxlabs/novyx-docs",
+                    "docs_path": "handbook",
                     "pull_request_number": 12,
                     "feedback": "correct",
                     "commenter": "blake",
@@ -34,6 +41,8 @@ class FakeStore:
                 "created_at": "2026-03-22T12:00:00Z",
                 "metadata": {
                     "repository": "novyxlabs/novyx-core",
+                    "docs_repo": "novyxlabs/novyx-docs",
+                    "docs_path": "handbook",
                     "pull_request_number": 12,
                     "head_sha": "abc123def456",
                     "top_doc": "billing.md",
@@ -85,6 +94,8 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(payload["metrics"]["case_studies"][0]["top_doc"], "billing.md")
         self.assertEqual(payload["metrics"]["side_effects"]["counts"]["token_auth_runs"], 1)
         self.assertEqual(payload["auth_mode"], "none")
+        self.assertEqual(payload["setup"]["docs_path"], "handbook")
+        self.assertEqual(payload["setup"]["checks"][0]["label"], "GitHub auth")
         self.assertEqual(payload["errors"], [])
 
     def test_build_dashboard_payload_surfaces_partial_errors(self):
@@ -112,9 +123,19 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("Drift Hotspots", html)
         self.assertIn("Proof Candidates", html)
         self.assertIn("Production Alerts", html)
+        self.assertIn("Setup Status", html)
         self.assertIn("GitHub auth mode: token", html)
+        self.assertIn("novyxlabs/novyx-docs", html)
         self.assertIn("Recent confidence mix", html)
         self.assertIn("novyxlabs/novyx-core", html)
+        self.assertIn("billing.md", html)
+
+    def test_public_proof_payload_and_html_include_case_studies(self):
+        payload = build_public_proof_payload(FakeStore(), limit=10)
+        self.assertEqual(payload["case_studies"][0]["top_doc"], "billing.md")
+        html = render_public_proof_html(payload)
+        self.assertIn("Change Intelligence Proof", html)
+        self.assertIn("Accepted Proof Points", html)
         self.assertIn("billing.md", html)
 
     def test_server_serves_dashboard_json_and_html(self):
@@ -143,6 +164,16 @@ class DashboardTests(unittest.TestCase):
         html = body.decode("utf8")
         self.assertIn("text/html", headers["Content-Type"])
         self.assertIn("Recent Feedback", html)
+
+        status, headers, body = invoke("/api/proof")
+        self.assertEqual(status, 200)
+        payload = json.loads(body.decode("utf8"))
+        self.assertEqual(payload["case_studies"][0]["top_doc"], "billing.md")
+
+        status, headers, body = invoke("/proof")
+        self.assertEqual(status, 200)
+        html = body.decode("utf8")
+        self.assertIn("Accepted Proof Points", html)
 
     def test_server_rejects_dashboard_without_secret_header(self):
         def invoke(path: str, provided_secret: Optional[str] = None) -> tuple[int, dict[str, str], bytes]:

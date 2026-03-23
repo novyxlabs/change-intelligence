@@ -24,6 +24,8 @@ def _normalize_run(memory: Dict[str, object]) -> Dict[str, object]:
     metadata = _metadata(memory)
     return {
         "repository": metadata.get("repository"),
+        "docs_repo": metadata.get("docs_repo"),
+        "docs_path": metadata.get("docs_path"),
         "pull_request_number": metadata.get("pull_request_number"),
         "head_sha": metadata.get("head_sha"),
         "top_doc": metadata.get("top_doc"),
@@ -86,6 +88,8 @@ def build_dashboard_payload(store, limit: int = 25, service_config=None) -> dict
     normalized_runs = [_normalize_run(item) for item in sorted(runs, key=_memory_sort_key, reverse=True)]
     normalized_feedback = [_normalize_feedback(item) for item in sorted(feedback, key=_memory_sort_key, reverse=True)]
 
+    setup = build_setup_status(service_config, metrics, normalized_runs)
+
     return {
         "generated_at": generated_at,
         "metrics": metrics,
@@ -93,6 +97,109 @@ def build_dashboard_payload(store, limit: int = 25, service_config=None) -> dict
         "recent_feedback": normalized_feedback,
         "errors": errors,
         "auth_mode": service_config.github_client.auth_mode() if service_config and service_config.github_client else "none",
+        "setup": setup,
+    }
+
+
+def build_public_proof_payload(store, limit: int = 25) -> dict[str, object]:
+    generated_at = datetime.now(timezone.utc).isoformat()
+    if store is None:
+        return {
+            "generated_at": generated_at,
+            "headline": "No public proof available yet.",
+            "metrics": {},
+            "case_studies": [],
+            "hotspots": [],
+            "proof_window": {},
+            "errors": ["novyx store unavailable"],
+        }
+
+    errors: List[str] = []
+    try:
+        metrics = compute_metrics(store, limit=max(limit, 100))
+    except Exception as error:
+        metrics = {}
+        errors.append(f"metrics: {error}")
+
+    proof_window = metrics.get("proof_window") if isinstance(metrics, dict) else {}
+    proof_window = proof_window if isinstance(proof_window, dict) else {}
+    case_studies = metrics.get("case_studies") if isinstance(metrics, dict) else []
+    case_studies = case_studies if isinstance(case_studies, list) else []
+    headline = (
+        f"{int(metrics.get('analysis_runs', 0) or 0)} analysis runs, "
+        f"{float(metrics.get('top_1_rate', 0.0) or 0.0) * 100:.0f}% top-1 correctness, "
+        f"{float(metrics.get('comment_rate', 0.0) or 0.0) * 100:.0f}% comment rate."
+        if metrics
+        else "No public proof available yet."
+    )
+    return {
+        "generated_at": generated_at,
+        "headline": headline,
+        "metrics": metrics,
+        "case_studies": case_studies[:3],
+        "hotspots": (metrics.get("hotspots") or [])[:3] if isinstance(metrics, dict) else [],
+        "proof_window": proof_window,
+        "errors": errors,
+    }
+
+
+def build_setup_status(service_config, metrics: Dict[str, object], recent_runs: List[Dict[str, object]]) -> Dict[str, object]:
+    auth_mode = service_config.github_client.auth_mode() if service_config and service_config.github_client else "none"
+    configured_docs_repo = getattr(service_config, "docs_repo", None) if service_config else None
+    configured_docs_path = getattr(service_config, "docs_path", "docs") if service_config else "docs"
+    latest_run = recent_runs[0] if recent_runs else {}
+    latest_docs_repo = latest_run.get("docs_repo") if isinstance(latest_run, dict) else None
+    latest_doc_path = latest_run.get("docs_path") if isinstance(latest_run, dict) else None
+    latest_created = latest_run.get("created_at") if isinstance(latest_run, dict) else None
+    latest_pr = latest_run.get("pull_request_number") if isinstance(latest_run, dict) else None
+    latest_repo = latest_run.get("repository") if isinstance(latest_run, dict) else None
+    latest_top_doc = latest_run.get("top_doc") if isinstance(latest_run, dict) else None
+    docs_repo_used = configured_docs_repo or latest_docs_repo or latest_repo
+    docs_path_used = latest_doc_path or configured_docs_path
+    proof_window = metrics.get("proof_window") if isinstance(metrics, dict) else {}
+    proof_window = proof_window if isinstance(proof_window, dict) else {}
+
+    checks = [
+        {
+            "label": "GitHub auth",
+            "status": "ready" if auth_mode in {"app", "token"} else "missing",
+            "detail": f"Runtime auth mode: {auth_mode}.",
+        },
+        {
+            "label": "Novyx memory",
+            "status": "ready" if getattr(service_config, "novyx_store", None) is not None else "missing",
+            "detail": "Novyx-backed learning and proof export are enabled." if getattr(service_config, "novyx_store", None) is not None else "NOVYX_API_KEY is not configured.",
+        },
+        {
+            "label": "Docs source",
+            "status": "ready",
+            "detail": f"Using {docs_repo_used or '-'} at `{docs_path_used}`.",
+        },
+        {
+            "label": "Live traffic",
+            "status": "ready" if latest_created else "waiting",
+            "detail": f"Last analyzed PR: {latest_repo or '-'}#{latest_pr or '-'} at {latest_created or '-'}."
+            if latest_created
+            else "No analysis run recorded yet.",
+        },
+        {
+            "label": "Proof window",
+            "status": "ready" if bool(proof_window.get('ready_for_case_study')) else "building",
+            "detail": f"{proof_window.get('analysis_runs', 0)} runs collected; {proof_window.get('remaining_to_minimum', 0)} to minimum public proof."
+            if proof_window
+            else "No proof window yet.",
+        },
+    ]
+    return {
+        "docs_repo": docs_repo_used,
+        "docs_path": docs_path_used,
+        "latest_run": {
+            "repository": latest_repo,
+            "pull_request_number": latest_pr,
+            "created_at": latest_created,
+            "top_doc": latest_top_doc,
+        },
+        "checks": checks,
     }
 
 
@@ -221,6 +328,40 @@ def _render_alerts(alerts: object) -> str:
     return "<ul>" + "".join(items) + "</ul>" if items else "<p class='meta'>No current production alerts.</p>"
 
 
+def _render_setup_checks(setup: object) -> str:
+    if not isinstance(setup, dict):
+        return "<li><strong>WAITING</strong>: No setup data yet.</li>"
+    checks = setup.get("checks")
+    if not isinstance(checks, list) or not checks:
+        return "<li><strong>WAITING</strong>: No setup data yet.</li>"
+    items = []
+    for item in checks:
+        if not isinstance(item, dict):
+            continue
+        items.append(
+            f"<li><strong>{escape(str(item.get('status', 'waiting')).upper())}</strong> {escape(str(item.get('label', '')))}: {escape(str(item.get('detail', '')))}</li>"
+        )
+    return "".join(items) or "<li><strong>WAITING</strong>: No setup data yet.</li>"
+
+
+def _render_public_case_studies(case_studies: object) -> str:
+    if not isinstance(case_studies, list) or not case_studies:
+        return "<p class='meta'>No accepted proof points yet.</p>"
+    blocks = []
+    for item in case_studies[:3]:
+        if not isinstance(item, dict):
+            continue
+        blocks.append(
+            "<article class='card'>"
+            f"<h2>{escape(str(item.get('repository', '-')))} #{escape(str(item.get('pull_request_number', '-')))}</h2>"
+            f"<p><strong>Changed file:</strong> {escape(str(item.get('changed_file') or '-'))}</p>"
+            f"<p><strong>Top doc:</strong> {escape(str(item.get('top_doc') or '-'))}</p>"
+            f"<p class='meta'>Confidence {_format_value(item.get('top_confidence'))} • Tier {_format_value(item.get('confidence_tier'))}</p>"
+            "</article>"
+        )
+    return "".join(blocks) or "<p class='meta'>No accepted proof points yet.</p>"
+
+
 def render_dashboard_html(payload: Dict[str, object]) -> str:
     metrics = payload.get("metrics")
     metrics = metrics if isinstance(metrics, dict) else {}
@@ -231,6 +372,7 @@ def render_dashboard_html(payload: Dict[str, object]) -> str:
     proof_window = metrics.get("proof_window")
     proof_window = proof_window if isinstance(proof_window, dict) else {}
     auth_mode = payload.get("auth_mode")
+    setup = payload.get("setup")
 
     error_html = ""
     if errors:
@@ -270,6 +412,11 @@ def render_dashboard_html(payload: Dict[str, object]) -> str:
     {error_html}
     <div class="cards">{_render_summary_cards(metrics)}</div>
     <div class="grid">
+      <section class="panel">
+        <h2>Setup Status</h2>
+        <ul>{_render_setup_checks(setup)}</ul>
+        <p class="meta">Current docs source: {_format_value((setup or {}).get("docs_repo"))} at {_format_value((setup or {}).get("docs_path"))}.</p>
+      </section>
       <section class="panel">
         <h2>Proof Window</h2>
         <p>Runs: {_format_value(proof_window.get("analysis_runs"))}. Remaining to 20: {_format_value(proof_window.get("remaining_to_minimum"))}. Ready: {_format_value(proof_window.get("ready_for_case_study"))}.</p>
@@ -324,6 +471,48 @@ def render_dashboard_html(payload: Dict[str, object]) -> str:
         </table>
       </section>
     </div>
+  </main>
+</body>
+</html>
+"""
+
+
+def render_public_proof_html(payload: Dict[str, object]) -> str:
+    metrics = payload.get("metrics")
+    metrics = metrics if isinstance(metrics, dict) else {}
+    proof_window = payload.get("proof_window")
+    proof_window = proof_window if isinstance(proof_window, dict) else {}
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Change Intelligence Proof</title>
+  <style>
+    :root {{ color-scheme: light; --bg: #f7f4ed; --panel: #fffdf8; --ink: #1c1a17; --muted: #6a6257; --line: #d9cfbf; }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; font-family: Georgia, "Times New Roman", serif; background: var(--bg); color: var(--ink); }}
+    main {{ max-width: 980px; margin: 0 auto; padding: 32px 20px 48px; }}
+    .cards {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 20px 0; }}
+    .card, .panel {{ background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }}
+    .meta {{ color: var(--muted); font-size: 14px; }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Change Intelligence Proof</h1>
+    <p>{escape(str(payload.get("headline") or ""))}</p>
+    <p class="meta">Generated at {_format_value(payload.get("generated_at"))}. Public proof view over real analysis runs and accepted examples.</p>
+    <div class="cards">
+      <section class="card"><h2>Analysis runs</h2><p>{_format_value(metrics.get("analysis_runs"))}</p></section>
+      <section class="card"><h2>Top-1 correctness</h2><p>{_format_percent(metrics.get("top_1_rate"))}</p></section>
+      <section class="card"><h2>Comment rate</h2><p>{_format_percent(metrics.get("comment_rate"))}</p></section>
+      <section class="card"><h2>Proof progress</h2><p>{_format_value(proof_window.get("analysis_runs"))}/20</p></section>
+    </div>
+    <section class="panel">
+      <h2>Accepted Proof Points</h2>
+      <div class="cards">{_render_public_case_studies(payload.get("case_studies"))}</div>
+    </section>
   </main>
 </body>
 </html>

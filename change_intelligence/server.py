@@ -5,7 +5,12 @@ import json
 import os
 from pathlib import Path
 
-from .dashboard import build_dashboard_payload, render_dashboard_html
+from .dashboard import (
+    build_dashboard_payload,
+    build_public_proof_payload,
+    render_dashboard_html,
+    render_public_proof_html,
+)
 from .github_client import GitHubClient
 from .novyx_store import NovyxConfig, NovyxStore
 from .service import ServiceConfig, process_github_event
@@ -40,6 +45,13 @@ class AppHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/health":
             self._json(200, {"ok": True})
+            return
+        if self.path == "/api/proof":
+            self._json(200, build_public_proof_payload(self.config.novyx_store))
+            return
+        if self.path == "/proof":
+            payload = build_public_proof_payload(self.config.novyx_store)
+            self._html(200, render_public_proof_html(payload))
             return
         if self.path == "/api/dashboard":
             if not self._dashboard_authorized():

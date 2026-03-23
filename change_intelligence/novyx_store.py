@@ -186,6 +186,8 @@ class NovyxStore:
         confidence_tier: str = "silent",
         comment_suppressed: bool = False,
         head_sha: Optional[str] = None,
+        docs_repo: Optional[str] = None,
+        docs_path: Optional[str] = None,
         action: Optional[str] = None,
         patterns: Optional[Sequence[Dict[str, object]]] = None,
         learned_signals: Optional[Dict[str, Dict[str, object]]] = None,
@@ -301,6 +303,8 @@ class NovyxStore:
             confidence_tier=confidence_tier,
             comment_suppressed=comment_suppressed,
             head_sha=head_sha,
+            docs_repo=docs_repo,
+            docs_path=docs_path,
             side_effects=side_effects,
         )
 
@@ -385,6 +389,8 @@ class NovyxStore:
         confidence_tier: str,
         comment_suppressed: bool,
         head_sha: Optional[str],
+        docs_repo: Optional[str],
+        docs_path: Optional[str],
         side_effects: Optional[Dict[str, Dict[str, object]]] = None,
     ) -> Dict[str, object]:
         top = recommendations[0] if recommendations else {}
@@ -413,6 +419,8 @@ class NovyxStore:
                 context=f"{repository}#{pull_request_number}",
                 metadata={
                     "repository": repository,
+                    "docs_repo": docs_repo,
+                    "docs_path": docs_path,
                     "pull_request_number": pull_request_number,
                     "confidence_tier": confidence_tier,
                     "comment_suppressed": comment_suppressed,

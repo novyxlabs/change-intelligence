@@ -111,6 +111,35 @@ def filter_comment_recommendations(recommendations: Sequence[Dict[str, object]],
     return pruned
 
 
+def filter_comment_patterns(
+    patterns: Sequence[Dict[str, object]],
+    recommendations: Sequence[Dict[str, object]],
+) -> List[Dict[str, object]]:
+    if not patterns:
+        return []
+    if not recommendations:
+        return list(patterns[:3])
+
+    target_paths = {
+        str(item.get("relative_path") or "")
+        for item in recommendations
+        if str(item.get("relative_path") or "")
+    }
+    target_names = {Path(path).name for path in target_paths}
+    top_surface_count = int(recommendations[0].get("surface_match_count", 0) or 0)
+    filtered = [
+        item
+        for item in patterns
+        if any(target in str(item.get("observation") or "") for target in [*target_paths, *target_names])
+    ]
+
+    if top_surface_count > 0:
+        return filtered[:3]
+    if filtered:
+        return filtered[:3]
+    return list(patterns[:3])
+
+
 def classify_confidence_tier(recommendations: Sequence[Dict[str, object]], threshold: int) -> str:
     top_confidence = int((recommendations[0].get("confidence", 0) if recommendations else 0) or 0)
     if top_confidence >= max(85, threshold + 15):
@@ -353,15 +382,15 @@ def collect_event_context(payload: Dict[str, object], config: ServiceConfig) -> 
         code_files = [
             item
             for item in files
-            if item.get("filename") and not is_doc_path(str(item["filename"]), config.docs_path)
+            if item.get("filename") and not is_doc_path(str(item["filename"]), docs_path_used)
         ]
         if not patch:
             patch = build_patch_from_files(code_files)
 
     actual_docs_changed = {
-        normalize_doc_path(str(item["filename"]), config.docs_path)
+        normalize_doc_path(str(item["filename"]), docs_path_used)
         for item in files
-        if item.get("filename") and is_doc_path(str(item["filename"]), config.docs_path)
+        if item.get("filename") and is_doc_path(str(item["filename"]), docs_path_used)
     }
 
     changed_file_names = [str(item["filename"]) for item in code_files if item.get("filename")]
@@ -472,6 +501,7 @@ def finalize_event_response(
         analysis["recommendations"],
         config.confidence_threshold,
     )
+    comment_patterns = filter_comment_patterns(patterns, comment_recommendations)
     comment_suppressed = len(comment_recommendations) == 0
     comment_body = None
     comment = None
@@ -491,6 +521,8 @@ def finalize_event_response(
                 confidence_tier=confidence_tier,
                 comment_suppressed=comment_suppressed,
                 head_sha=context.head_sha,
+                docs_repo=config.docs_repo or context.repository,
+                docs_path=context.docs_path_used,
                 action=context.action,
                 patterns=patterns,
                 learned_signals=learned_signals,
@@ -512,7 +544,7 @@ def finalize_event_response(
             context.pull_request_number,
             analysis["summary"],
             comment_recommendations,
-            patterns,
+            comment_patterns,
             config.confidence_threshold,
             analysis["support_updates"],
             analysis["onboarding_updates"],

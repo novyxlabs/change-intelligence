@@ -308,6 +308,12 @@ Reference monitoring plan:
 
 - [MONITORING.md](./MONITORING.md)
 
+Public proof and setup surfaces:
+
+- `/proof` gives a public-facing proof page with accepted examples and headline metrics
+- `/api/proof` returns the same proof data as JSON
+- `/dashboard` now includes setup status, resolved docs source, trust metrics, and hotspot visibility
+
 ## Roadmap
 
 Near-term:
