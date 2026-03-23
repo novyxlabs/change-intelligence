@@ -41,13 +41,13 @@ class AppHandler(BaseHTTPRequestHandler):
         if self.path == "/health":
             self._json(200, {"ok": True})
             return
-        if self.path == "/api/dashboard":
+        if self.path in {"/api/dashboard", "/api/ops-dashboard"}:
             if not self._dashboard_authorized():
                 self._json(401, {"error": "Unauthorized"})
                 return
             self._json(200, build_dashboard_payload(self.config.novyx_store, service_config=self.config))
             return
-        if self.path == "/dashboard":
+        if self.path in {"/dashboard", "/ops-dashboard"}:
             if not self._dashboard_authorized():
                 self._json(401, {"error": "Unauthorized"})
                 return
