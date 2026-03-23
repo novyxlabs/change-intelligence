@@ -13,6 +13,16 @@ except ImportError:  # pragma: no cover - exercised only in minimal test envs.
 
 
 COMMENT_MARKER = "<!-- change-intelligence-comment -->"
+COMMON_DOCS_PATHS = (
+    "docs",
+    "doc",
+    "documentation",
+    "handbook",
+    "guides",
+    "guide",
+    "help",
+    "wiki",
+)
 
 
 @dataclass
@@ -253,6 +263,59 @@ class GitHubClient:
                     }
                 )
         return docs
+
+    def discover_docs_path(
+        self,
+        owner: str,
+        repo: str,
+        installation_id: Optional[int],
+        ref: Optional[str],
+        preferred: Optional[str] = None,
+    ) -> Optional[str]:
+        candidates: List[str] = []
+        if preferred:
+            candidates.append(preferred.strip("/"))
+        for candidate in COMMON_DOCS_PATHS:
+            normalized = candidate.strip("/")
+            if normalized and normalized not in candidates:
+                candidates.append(normalized)
+
+        token = self._installation_token(installation_id)
+        for candidate in candidates:
+            try:
+                response = self._request(
+                    "GET",
+                    f"/repos/{owner}/{repo}/contents/{candidate}",
+                    token=token,
+                    params={"ref": ref} if ref else None,
+                )
+            except requests.HTTPError as error:
+                if ref and error.response is not None and error.response.status_code == 404:
+                    try:
+                        response = self._request(
+                            "GET",
+                            f"/repos/{owner}/{repo}/contents/{candidate}",
+                            token=token,
+                        )
+                    except requests.HTTPError as fallback_error:
+                        if fallback_error.response is not None and fallback_error.response.status_code == 404:
+                            continue
+                        raise
+                elif error.response is not None and error.response.status_code == 404:
+                    continue
+                else:
+                    raise
+
+            payload = response.json()
+            if isinstance(payload, dict):
+                payload = [payload]
+            if any(
+                entry.get("type") == "file"
+                and str(entry.get("name", "")).lower().endswith((".md", ".mdx", ".txt"))
+                for entry in payload
+            ) or any(entry.get("type") == "dir" for entry in payload):
+                return candidate
+        return None
 
     def pull_requests(
         self,

@@ -5,6 +5,7 @@ from pathlib import Path
 import hashlib
 import hmac
 import json
+import requests
 from typing import Dict, List, Optional, Sequence, Set
 
 from .analysis import analyze_patch, render_markdown
@@ -39,6 +40,7 @@ class EventContext:
     files: List[Dict[str, object]]
     code_files: List[Dict[str, object]]
     docs: Optional[Sequence[Dict[str, str]]]
+    docs_path_used: str
     actual_docs_changed: Set[str]
     changed_file_names: List[str]
     query: str
@@ -297,6 +299,7 @@ def collect_event_context(payload: Dict[str, object], config: ServiceConfig) -> 
     owner, repo = split_repository(repository)
     docs_repo = config.docs_repo or repository
     docs_owner, docs_repo_name = split_repository(docs_repo)
+    docs_path_used = config.docs_path
     installation_id = (payload.get("installation") or {}).get("id")
     if installation_id is None and config.github_client is not None and config.github_client.auth_mode() == "app":
         installation_id = config.github_client.repository_installation_id(owner, repo)
@@ -307,13 +310,40 @@ def collect_event_context(payload: Dict[str, object], config: ServiceConfig) -> 
     docs = None
     if config.github_client is not None:
         ref = ((pull_request.get("head") or {}).get("sha")) or None
-        docs = config.github_client.repo_docs(
-            docs_owner,
-            docs_repo_name,
-            config.docs_path,
-            None if docs_repo != repository else ref,
-            installation_id,
-        )
+        docs_ref = None if docs_repo != repository else ref
+        try:
+            docs = config.github_client.repo_docs(
+                docs_owner,
+                docs_repo_name,
+                config.docs_path,
+                docs_ref,
+                installation_id,
+            )
+        except requests.HTTPError as error:
+            can_autodetect = (
+                error.response is not None
+                and error.response.status_code == 404
+                and config.docs_path.strip("/") == "docs"
+            )
+            if not can_autodetect:
+                raise
+            detected_path = config.github_client.discover_docs_path(
+                docs_owner,
+                docs_repo_name,
+                installation_id,
+                docs_ref,
+                preferred=config.docs_path,
+            )
+            if not detected_path or detected_path == config.docs_path.strip("/"):
+                raise
+            docs_path_used = detected_path
+            docs = config.github_client.repo_docs(
+                docs_owner,
+                docs_repo_name,
+                docs_path_used,
+                docs_ref,
+                installation_id,
+            )
         files = config.github_client.pull_request_files(
             owner,
             repo,
@@ -354,6 +384,7 @@ def collect_event_context(payload: Dict[str, object], config: ServiceConfig) -> 
         files=files,
         code_files=code_files,
         docs=docs,
+        docs_path_used=docs_path_used,
         actual_docs_changed=actual_docs_changed,
         changed_file_names=changed_file_names,
         query=query,
@@ -520,6 +551,8 @@ def finalize_event_response(
             "ok": True,
             "action": context.action,
             "repository": context.repository,
+            "docs_repo": config.docs_repo or context.repository,
+            "docs_path": context.docs_path_used,
             "pull_request_number": context.pull_request_number,
             "summary": analysis["summary"],
             "recommendations": analysis["recommendations"],

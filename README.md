@@ -287,7 +287,7 @@ GitHub auth options:
 
 Optional configuration:
 
-- `DOCS_PATH` to change the docs folder fetched from GitHub, default `docs`
+- `DOCS_PATH` to override the docs folder fetched from GitHub. If unset or left at the default `docs`, Change Intelligence will auto-try common folders like `documentation/`, `handbook/`, `guides/`, and `wiki/`.
 - `DOC_OWNERSHIP_RULES_PATH` to override the repository-to-doc ownership rules file, default `change_intelligence/seeds/doc_ownership.json`
 - `GITHUB_API_URL` for GitHub Enterprise or testing
 - `CONFIDENCE_THRESHOLD` to tune when the app comments, default `60`

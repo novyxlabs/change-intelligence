@@ -3,6 +3,8 @@ import tempfile
 from pathlib import Path
 import unittest
 
+import requests
+
 from change_intelligence.analysis import analyze_patch
 from change_intelligence.github_client import COMMENT_MARKER
 from change_intelligence.service import (
@@ -202,6 +204,7 @@ class ChangeIntelligenceServiceTests(unittest.TestCase):
         self.assertEqual(github_client.comments[0][2], 42)
         self.assertEqual(result["payload"]["side_effects"]["github_comment"]["status"], "commented")
         self.assertEqual(result["payload"]["auth_mode"], "app")
+        self.assertEqual(result["payload"]["docs_path"], "docs")
         self.assertIn("### What Changed", result["payload"]["comment_body"])
         self.assertIn("### Why This Is High Confidence", result["payload"]["comment_body"])
         self.assertIn("### Risk If Ignored", result["payload"]["comment_body"])
@@ -265,6 +268,49 @@ index 1111111..2222222 100644
 
         self.assertIn("Exact route or API surface matches were found in the top doc.", result["payload"]["comment_body"])
         self.assertNotIn("### mcp/tools-reference.md", result["payload"]["comment_body"])
+
+    def test_process_github_event_autodetects_common_docs_path_when_docs_is_missing(self):
+        patch = (FIXTURES / "sample.patch").read_text(encoding="utf8")
+        body = json.dumps(
+            {
+                "action": "opened",
+                "repository": {"full_name": "acme/app"},
+                "pull_request": {"number": 42, "head": {"sha": "abc123"}},
+            }
+        )
+
+        class AutoDetectGitHubClient(FakeGitHubClient):
+            def repo_docs(self, owner, repo, docs_path, ref, installation_id):
+                self.docs_requests.append((owner, repo, docs_path, ref, installation_id))
+                if docs_path == "docs":
+                    response = requests.Response()
+                    response.status_code = 404
+                    error = requests.HTTPError(response=response)
+                    raise error
+                return [
+                    {
+                        "path": "handbook/billing.md",
+                        "relative_path": "billing.md",
+                        "content": "# Billing Guide\n\n## createCheckoutSession\n\nUse `createCheckoutSession` to start checkout.",
+                    }
+                ]
+
+            def discover_docs_path(self, owner, repo, installation_id, ref, preferred=None):
+                return "handbook"
+
+        result = process_github_event(
+            body,
+            None,
+            ServiceConfig(
+                docs_root=FIXTURES / "repo" / "docs",
+                github_client=AutoDetectGitHubClient(patch),
+                confidence_threshold=60,
+            ),
+        )
+
+        self.assertEqual(result["status_code"], 200)
+        self.assertEqual(result["payload"]["docs_path"], "handbook")
+        self.assertEqual(result["payload"]["recommendations"][0]["relative_path"], "billing.md")
 
     def test_process_github_event_stays_silent_below_threshold(self):
         patch = (FIXTURES / "sample.patch").read_text(encoding="utf8")
