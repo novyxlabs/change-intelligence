@@ -275,5 +275,38 @@ index 2222222..3333333 100644
         self.assertEqual(result["recommendations"][0]["relative_path"], "api-reference/webhooks.md")
         self.assertEqual(result["recommendations"][0]["confidence"], 100)
 
+    def test_docs_with_more_exact_surface_coverage_outrank_parent_route_mentions(self):
+        patch = """diff --git a/change_intelligence/server.py b/change_intelligence/server.py
+index 1111111..2222222 100644
+--- a/change_intelligence/server.py
++++ b/change_intelligence/server.py
+@@ -1,0 +1,3 @@
++# POST /v1/webhooks
++# GET /v1/webhooks/{webhook_id}
++# GET /v1/webhooks/{webhook_id}/deliveries
+"""
+        docs = [
+            {
+                "path": "docs/api-reference/anomalies.md",
+                "relative_path": "api-reference/anomalies.md",
+                "content": "# Anomalies\n\nWatch webhook anomalies from `/v1/webhooks`.",
+            },
+            {
+                "path": "docs/api-reference/webhooks.md",
+                "relative_path": "api-reference/webhooks.md",
+                "content": "# Webhooks\n\n## POST /v1/webhooks\n\nCreate a webhook.\n\n## GET /v1/webhooks/{webhook_id}\n\nRead a webhook.\n\n## GET /v1/webhooks/{webhook_id}/deliveries\n\nInspect delivery history.",
+            },
+        ]
+
+        result = analyze_patch(patch, docs=docs, repository="novyxlabs/change-intelligence")
+
+        self.assertEqual(result["recommendations"][0]["relative_path"], "api-reference/webhooks.md")
+        self.assertTrue(
+            any(
+                "docs covering more of the changed API surface outrank broad parent-route mentions" in line
+                for line in result["recommendations"][0]["evidence"]
+            )
+        )
+
 if __name__ == "__main__":
     unittest.main()

@@ -367,6 +367,14 @@ def exact_surface_targets(diff: DiffSummary, docs: Sequence[DocIndex]) -> Set[st
     return targets
 
 
+def matching_surface_details(diff: DiffSummary, doc: DocIndex) -> List[str]:
+    return [surface for surface in diff.surfaces if surface in doc.surfaces]
+
+
+def surface_specificity(surface: str) -> int:
+    return surface.count("/") + (surface.count("{") * 2) + len(surface)
+
+
 def relevant_surfaces_for_docs(diff: DiffSummary, docs: Sequence[DocIndex]) -> List[str]:
     if not diff.surfaces:
         return []
@@ -498,7 +506,7 @@ def score_document(
         if symbol.lower() in doc.content.lower()
         or any(symbol.lower() in heading.lower() for heading in doc.headings)
     ]
-    matching_surfaces = [surface for surface in diff.surfaces if surface in doc.surfaces]
+    matching_surfaces = matching_surface_details(diff, doc)
     if matching_symbols:
         score += len(matching_symbols) * 20
         evidence.append("Mentions changed symbols: " + ", ".join(matching_symbols[:5]))
@@ -598,6 +606,8 @@ def score_document(
         "score": score,
         "confidence": confidence,
         "evidence": list(dict.fromkeys(evidence))[:6],
+        "surface_match_count": len(matching_surfaces),
+        "surface_match_specificity": sum(surface_specificity(surface) for surface in matching_surfaces),
     }
 
 
@@ -654,11 +664,17 @@ def rank_documents(
         for item in recommendations:
             relative_path = str(item.get("relative_path") or "")
             if relative_path in surface_targets:
-                item["score"] = int(item["score"]) + 24
+                match_count = int(item.get("surface_match_count") or 0)
+                match_specificity = int(item.get("surface_match_specificity") or 0)
+                item["score"] = int(item["score"]) + 24 + (match_count * 18) + match_specificity
                 item["confidence"] = min(100, int(item["confidence"]) + 8)
                 item["evidence"] = item["evidence"] + [
                     "Post-rank boost: exact route/API matches outrank broad historical-pattern matches"
                 ]
+                if match_count > 1:
+                    item["evidence"] = item["evidence"] + [
+                        "Post-rank boost: docs covering more of the changed API surface outrank broad parent-route mentions"
+                    ]
                 continue
             if is_index_page(DocIndex(path=str(item["path"]), relative_path=relative_path, headings=[], content="", tokens=set(), surfaces=set())):
                 item["score"] = max(0, int(item["score"]) - 42)
