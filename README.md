@@ -101,7 +101,6 @@ GITHUB_WEBHOOK_SECRET=dev-secret NOVYX_API_KEY=nram_your_key GITHUB_TOKEN=ghp_yo
 ## Deploying To Fly.io
 
 This repo now ships with a Fly.io deploy path for the Python webhook service.
-The section below is also useful as a minimal smoke-test surface for webhook-driven deploy verification.
 
 Files:
 
