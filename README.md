@@ -7,7 +7,7 @@ Usually nobody notices until users do.
 `change-intelligence` exists to catch that in the pull request.
 
 Want the concrete evidence first:
-- [PROOF.md](/Users/blakeheron/Desktop/demo/PROOF.md)
+- [PROOF.md](./PROOF.md)
 
 The Python service under `change_intelligence/` is the only production runtime.
 The earlier Node implementation in `src/` remains as a reference CLI and fixture harness for the ranking logic, not as a deployed server.
@@ -294,7 +294,7 @@ Doc ownership rules:
 
 Reference monitoring plan:
 
-- [MONITORING.md](/Users/blakeheron/Desktop/demo/MONITORING.md)
+- [MONITORING.md](./MONITORING.md)
 
 ## Roadmap
 

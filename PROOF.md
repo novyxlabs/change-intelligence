@@ -85,8 +85,8 @@ Why this matters:
 
 Relevant fix:
 
-- [`change_intelligence/service.py`](/Users/blakeheron/Desktop/demo/change_intelligence/service.py)
-- [`tests/test_service.py`](/Users/blakeheron/Desktop/demo/tests/test_service.py)
+- [`change_intelligence/service.py`](./change_intelligence/service.py)
+- [`tests/test_service.py`](./tests/test_service.py)
 
 ## What These Examples Show
 
