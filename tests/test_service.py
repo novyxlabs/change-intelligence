@@ -69,6 +69,11 @@ class FakeGitHubClient:
         self.docs_requests = []
         self.file_requests = []
         self.deleted_comments = []
+        self.installation_requests = []
+
+    def repository_installation_id(self, owner, repo):
+        self.installation_requests.append((owner, repo))
+        return 123
 
     def repo_docs(self, owner, repo, docs_path, ref, installation_id):
         self.docs_requests.append((owner, repo, docs_path, ref, installation_id))
@@ -280,6 +285,39 @@ class ChangeIntelligenceServiceTests(unittest.TestCase):
         self.assertEqual(result["status_code"], 200)
         self.assertEqual(result["payload"]["pull_request_number"], 42)
         self.assertEqual(github_client.file_requests[0][2], 42)
+
+    def test_process_github_event_resolves_installation_id_for_repo_webhook_under_app_auth(self):
+        patch = (FIXTURES / "sample.patch").read_text(encoding="utf8")
+        body = json.dumps(
+            {
+                "action": "opened",
+                "number": 42,
+                "repository": {"full_name": "acme/app"},
+                "pull_request": {
+                    "patch": patch,
+                    "head": {"sha": "abc123"},
+                },
+            }
+        )
+        github_client = FakeGitHubClient(patch)
+        result = process_github_event(
+            body,
+            None,
+            ServiceConfig(
+                docs_root=FIXTURES / "repo" / "docs",
+                github_client=github_client,
+                confidence_threshold=60,
+            ),
+        )
+
+        self.assertEqual(result["status_code"], 200)
+        self.assertEqual(github_client.installation_requests, [("acme", "app")])
+        self.assertEqual(github_client.docs_requests[0][-1], 123)
+        self.assertEqual(github_client.file_requests[0][-1], 123)
+        if github_client.comments:
+            self.assertEqual(github_client.comments[0][3], 123)
+        else:
+            self.assertEqual(github_client.deleted_comments[0][3], 123)
 
     def test_invalid_signature_is_rejected(self):
         result = process_github_event(

@@ -281,6 +281,8 @@ def collect_event_context(payload: Dict[str, object], config: ServiceConfig) -> 
     docs_repo = config.docs_repo or repository
     docs_owner, docs_repo_name = split_repository(docs_repo)
     installation_id = (payload.get("installation") or {}).get("id")
+    if installation_id is None and config.github_client is not None and config.github_client.auth_mode() == "app":
+        installation_id = config.github_client.repository_installation_id(owner, repo)
     patch = pull_request.get("patch") or payload.get("patch")
 
     files: List[Dict[str, object]] = []
