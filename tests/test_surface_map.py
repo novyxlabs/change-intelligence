@@ -49,6 +49,10 @@ class SurfaceMapTests(unittest.TestCase):
             extract_surfaces_from_line("Docs mention /v1/webhooks/{webhook_id}/deliveries."),
             {"/v1/webhooks/{webhook_id}/deliveries"},
         )
+        self.assertEqual(
+            extract_surfaces_from_line('f"/repos/{owner}/{repo}/installation"'),
+            {"/repos/{owner}/{repo}/installation"},
+        )
 
     def test_analyze_patch_prefers_docs_with_exact_surface_matches(self):
         result = analyze_patch(PATCH, docs=DOCS, repository="acme/app")
@@ -172,6 +176,59 @@ index 2222222..3333333 100644
             result["summary"]["changed_surfaces"],
             ["/v1/webhooks", "/v1/webhooks/{webhook_id}/deliveries"],
         )
+
+    def test_doc_relevant_surfaces_hide_internal_routes_and_landing_pages(self):
+        patch = """diff --git a/change_intelligence/github_client.py b/change_intelligence/github_client.py
+index 1111111..2222222 100644
+--- a/change_intelligence/github_client.py
++++ b/change_intelligence/github_client.py
+@@ -1,0 +1,3 @@
++response = self._request("GET", f"/repos/{owner}/{repo}/installation")
+diff --git a/change_intelligence/server.py b/change_intelligence/server.py
+index 2222222..3333333 100644
+--- a/change_intelligence/server.py
++++ b/change_intelligence/server.py
+@@ -1,0 +1,8 @@
++# POST /v1/webhooks
++# GET /v1/webhooks/{webhook_id}/deliveries
++if self.path in {"/api/dashboard", "/api/ops-dashboard"}:
++    pass
++if self.path in {"/dashboard", "/ops-dashboard"}:
++    pass
+"""
+        docs = [
+            {
+                "path": "docs/index.md",
+                "relative_path": "index.md",
+                "content": "# Novyx Documentation\n\nAPI Reference, SDKs, guides, and dashboards overview.",
+            },
+            {
+                "path": "docs/sdks/cli.md",
+                "relative_path": "sdks/cli.md",
+                "content": "# CLI\n\nInstall the CLI and authenticate to manage agents.",
+            },
+            {
+                "path": "docs/errors.md",
+                "relative_path": "errors.md",
+                "content": "# Error Reference\n\nCommon auth and request failures.",
+            },
+            {
+                "path": "docs/api-reference/webhooks.md",
+                "relative_path": "api-reference/webhooks.md",
+                "content": "# Webhooks\n\n## POST /v1/webhooks\n\nCreate a webhook.\n\n## GET /v1/webhooks/{webhook_id}/deliveries\n\nInspect delivery history.",
+            },
+        ]
+
+        result = analyze_patch(patch, docs=docs, repository="novyxlabs/change-intelligence")
+
+        self.assertEqual(
+            result["summary"]["changed_surfaces"],
+            ["/v1/webhooks", "/v1/webhooks/{webhook_id}/deliveries"],
+        )
+        self.assertEqual(result["recommendations"][0]["relative_path"], "api-reference/webhooks.md")
+        self.assertNotIn("/{repo}", result["markdown"])
+        self.assertNotIn("/repos/{owner}/{repo}/installation", result["markdown"])
+        self.assertNotIn("/api/dashboard", result["markdown"])
 
 if __name__ == "__main__":
     unittest.main()

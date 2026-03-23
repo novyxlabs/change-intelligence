@@ -367,6 +367,17 @@ def exact_surface_targets(diff: DiffSummary, docs: Sequence[DocIndex]) -> Set[st
     return targets
 
 
+def relevant_surfaces_for_docs(diff: DiffSummary, docs: Sequence[DocIndex]) -> List[str]:
+    if not diff.surfaces:
+        return []
+    doc_surfaces = {
+        surface
+        for doc in docs
+        for surface in doc.surfaces
+    }
+    return [surface for surface in diff.surfaces if surface in doc_surfaces]
+
+
 def is_reference_expansion(diff: DiffSummary) -> bool:
     identifier_count = len(diff.added_identifiers)
     changed_paths = " ".join(file.path.lower() for file in diff.files)
@@ -657,6 +668,13 @@ def rank_documents(
                     "Post-rank boost: exact route/API matches outrank broad historical-pattern matches"
                 ]
                 continue
+            if is_index_page(DocIndex(path=str(item["path"]), relative_path=relative_path, headings=[], content="", tokens=set(), surfaces=set())):
+                item["score"] = max(0, int(item["score"]) - 42)
+                item["confidence"] = min(int(item["confidence"]), 60)
+                item["evidence"] = item["evidence"] + [
+                    "Post-rank demotion: broad index pages should not outrank specific docs with exact route/API matches"
+                ]
+                continue
             if is_changelog_page(DocIndex(path=str(item["path"]), relative_path=relative_path, headings=[], content="", tokens=set(), surfaces=set())):
                 item["score"] = max(0, int(item["score"]) - 36)
                 item["confidence"] = min(int(item["confidence"]), 64)
@@ -665,8 +683,8 @@ def rank_documents(
                 ]
                 continue
             if diff.surfaces and int(item["confidence"]) >= 80:
-                item["score"] = max(0, int(item["score"]) - 12)
-                item["confidence"] = max(55, min(int(item["confidence"]), 88))
+                item["score"] = max(0, int(item["score"]) - 20)
+                item["confidence"] = max(50, min(int(item["confidence"]), 80))
                 item["evidence"] = item["evidence"] + [
                     "Post-rank trim: exact route/API matches were found elsewhere, so weaker indirect matches were demoted"
                 ]
@@ -900,8 +918,15 @@ def analyze_patch(
 ) -> Dict[str, object]:
     diff = parse_unified_diff(diff_text)
     indexed_docs = index_doc_blobs(docs) if docs is not None else index_docs(docs_root)
+    relevant_surfaces = relevant_surfaces_for_docs(diff, indexed_docs)
+    ranking_diff = DiffSummary(
+        files=diff.files,
+        symbols=diff.symbols,
+        added_identifiers=diff.added_identifiers,
+        surfaces=relevant_surfaces or diff.surfaces,
+    )
     recommendations = rank_documents(
-        diff,
+        ranking_diff,
         indexed_docs,
         learned_signals=learned_signals,
         patterns=patterns,
@@ -912,12 +937,12 @@ def analyze_patch(
     summary = {
         "changed_files": [item.path for item in diff.files],
         "changed_symbols": sorted(diff.symbols),
-        "changed_surfaces": diff.surfaces,
+        "changed_surfaces": ranking_diff.surfaces,
         "docs_analyzed": len(indexed_docs),
     }
-    release_notes = build_release_notes(summary, diff, recommendations)
-    support_updates = build_support_updates(summary, diff, recommendations, indexed_docs)
-    onboarding_updates = build_onboarding_updates(summary, diff, recommendations, indexed_docs)
+    release_notes = build_release_notes(summary, ranking_diff, recommendations)
+    support_updates = build_support_updates(summary, ranking_diff, recommendations, indexed_docs)
+    onboarding_updates = build_onboarding_updates(summary, ranking_diff, recommendations, indexed_docs)
     return {
         "summary": summary,
         "recommendations": recommendations,
