@@ -1,7 +1,7 @@
 import unittest
 
 from change_intelligence.feedback import parse_feedback_command, process_feedback_event
-from change_intelligence.metrics import compute_metrics
+from change_intelligence.metrics import compute_metrics, render_case_studies_markdown
 
 
 class FakeStore:
@@ -219,6 +219,25 @@ class FeedbackAndMetricsTests(unittest.TestCase):
         self.assertEqual(metrics["novyx"]["audit"]["entry_count"], 1)
         self.assertEqual(metrics["novyx"]["eval"]["history_count"], 1)
         self.assertEqual(metrics["novyx"]["eval"]["drift"]["drift_score"], 0.03)
+
+    def test_render_case_studies_markdown(self):
+        markdown = render_case_studies_markdown(
+            [
+                {
+                    "repository": "novyxlabs/novyx-core",
+                    "pull_request_number": 12,
+                    "changed_file": "src/billing/createCheckoutSession.ts",
+                    "top_doc": "billing.md",
+                    "top_confidence": 84,
+                    "confidence_tier": "review-recommended",
+                    "area": "src/billing",
+                    "created_at": "2026-03-22T12:01:00Z",
+                }
+            ]
+        )
+        self.assertIn("# Change Intelligence Case Studies", markdown)
+        self.assertIn("novyxlabs/novyx-core #12", markdown)
+        self.assertIn("`billing.md`", markdown)
 
     def test_compute_metrics_surfaces_novyx_errors(self):
         store = BrokenObservabilityStore(feedback=[], runs=[])

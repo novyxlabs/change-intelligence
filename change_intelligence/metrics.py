@@ -268,6 +268,35 @@ def summarize_hotspots(feedback: Iterable[Dict[str, object]], runs: Iterable[Dic
     return results[:10]
 
 
+def render_case_studies_markdown(case_studies: Iterable[Dict[str, object]]) -> str:
+    items = list(case_studies)
+    lines = [
+        "# Change Intelligence Case Studies",
+        "",
+        "Accepted proof points pulled from real analysis runs and reviewer feedback.",
+        "",
+    ]
+    if not items:
+        lines.append("No accepted proof points yet.")
+        return "\n".join(lines)
+
+    for index, item in enumerate(items, start=1):
+        lines.extend(
+            [
+                f"## {index}. {item.get('repository')} #{item.get('pull_request_number')}",
+                "",
+                f"- Changed file: `{item.get('changed_file') or '-'}`",
+                f"- Top doc: `{item.get('top_doc') or '-'}`",
+                f"- Confidence: `{item.get('top_confidence') or '-'}`",
+                f"- Tier: `{item.get('confidence_tier') or '-'}`",
+                f"- Area: `{item.get('area') or '-'}`",
+                f"- Verified: `{item.get('created_at') or '-'}`",
+                "",
+            ]
+        )
+    return "\n".join(lines).rstrip()
+
+
 def compute_metrics(store: NovyxStore, limit: int = 500) -> dict[str, object]:
     feedback = store.list_memories(["ci-feedback"], limit=limit)
     runs = store.list_memories(["analysis-run"], limit=limit)
@@ -351,6 +380,7 @@ def compute_metrics(store: NovyxStore, limit: int = 500) -> dict[str, object]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Compute daily change-intelligence metrics from Novyx.")
     parser.add_argument("--output-path")
+    parser.add_argument("--case-studies-path", help="Optional path to write markdown case studies from accepted runs")
     parser.add_argument("--limit", type=int, default=500)
     args = parser.parse_args()
 
@@ -365,6 +395,11 @@ def main() -> None:
     rendered = json.dumps(metrics, indent=2)
     if args.output_path:
         Path(args.output_path).write_text(rendered, encoding="utf8")
+    if args.case_studies_path:
+        Path(args.case_studies_path).write_text(
+            render_case_studies_markdown(metrics.get("case_studies") or []),
+            encoding="utf8",
+        )
     print(rendered)
 
 

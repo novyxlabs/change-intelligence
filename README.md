@@ -142,6 +142,12 @@ Run the test suite:
 npm test
 ```
 
+Export proof artifacts from accepted runs:
+
+```bash
+npm run proof:export
+```
+
 ## Run The Service
 
 Start the Python webhook service locally:
