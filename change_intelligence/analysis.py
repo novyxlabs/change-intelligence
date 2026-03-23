@@ -99,6 +99,7 @@ class ChangedFile:
     removed_lines: List[str]
     path_tokens: Set[str]
     content_tokens: Set[str]
+    is_test: bool
 
 
 @dataclass
@@ -164,17 +165,21 @@ def parse_unified_diff(diff_text: str) -> DiffSummary:
         if line.startswith("+") and not line.startswith("+++"):
             stripped = line[1:]
             current["added_lines"].append(stripped)
-            line_symbols = extract_symbols(stripped)
-            symbols.update(line_symbols)
-            added_identifiers.extend(sorted(line_symbols))
-            surfaces.extend(extract_surfaces([stripped]))
+            current_path = str(current.get("path") or "")
+            if not is_test_path(current_path):
+                line_symbols = extract_symbols(stripped)
+                symbols.update(line_symbols)
+                added_identifiers.extend(sorted(line_symbols))
+                surfaces.extend(extract_surfaces([stripped]))
             continue
 
         if line.startswith("-") and not line.startswith("---"):
             stripped = line[1:]
             current["removed_lines"].append(stripped)
-            symbols.update(extract_symbols(stripped))
-            surfaces.extend(extract_surfaces([stripped]))
+            current_path = str(current.get("path") or "")
+            if not is_test_path(current_path):
+                symbols.update(extract_symbols(stripped))
+                surfaces.extend(extract_surfaces([stripped]))
 
     if current is not None:
         files.append(finalize_file(current))
@@ -205,6 +210,20 @@ def finalize_file(raw_file: Dict[str, object]) -> ChangedFile:
         removed_lines=removed_lines,
         path_tokens=path_tokens,
         content_tokens=content_tokens,
+        is_test=is_test_path(path),
+    )
+
+
+def is_test_path(path: str) -> bool:
+    normalized = path.replace("\\", "/").lower()
+    return (
+        normalized.startswith("tests/")
+        or normalized.startswith("test/")
+        or "/tests/" in normalized
+        or "/test/" in normalized
+        or normalized.endswith("_test.py")
+        or normalized.endswith(".test.js")
+        or normalized.endswith(".spec.js")
     )
 
 
@@ -443,6 +462,8 @@ def score_document(
     domain_overlap = sorted(diff_domain_tokens(diff) & doc_domain_tokens(doc))
 
     for changed_file in diff.files:
+        if changed_file.is_test:
+            continue
         path_overlap = intersection_size(changed_file.path_tokens, doc.tokens)
         content_overlap = intersection_size(changed_file.content_tokens, doc.tokens)
 

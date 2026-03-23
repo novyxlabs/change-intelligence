@@ -19,7 +19,7 @@ def normalize_surface(value: str) -> str:
         return ""
     if surface.startswith("//"):
         return ""
-    surface = surface.rstrip(".,:;)]}")
+    surface = surface.rstrip(".,:;)]")
     if len(surface) > 1:
         surface = surface.rstrip("/")
     return surface

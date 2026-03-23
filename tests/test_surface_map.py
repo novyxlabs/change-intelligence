@@ -45,6 +45,10 @@ class SurfaceMapTests(unittest.TestCase):
             extract_surfaces_from_line("Docs mention /v1/webhooks."),
             {"/v1/webhooks"},
         )
+        self.assertEqual(
+            extract_surfaces_from_line("Docs mention /v1/webhooks/{webhook_id}/deliveries."),
+            {"/v1/webhooks/{webhook_id}/deliveries"},
+        )
 
     def test_analyze_patch_prefers_docs_with_exact_surface_matches(self):
         result = analyze_patch(PATCH, docs=DOCS, repository="acme/app")
@@ -98,6 +102,76 @@ index 1111111..2222222 100644
             any("exact route/API matches outrank broad historical-pattern matches" in line for line in result["recommendations"][0]["evidence"])
         )
 
+    def test_delivery_history_surface_prefers_webhooks_reference(self):
+        patch = """diff --git a/change_intelligence/server.py b/change_intelligence/server.py
+index 2222222..3333333 100644
+--- a/change_intelligence/server.py
++++ b/change_intelligence/server.py
+@@ -1,0 +1,4 @@
++request("GET /v1/webhooks/{webhook_id}/deliveries?limit=10")
++# Delivery history should stay explicit for webhook debugging.
++# The webhook endpoint remains separate from generic audit events.
++# Keep delivery surfaces aligned with the public API docs.
+"""
+        docs = [
+            {
+                "path": "docs/api-reference/webhooks.md",
+                "relative_path": "api-reference/webhooks.md",
+                "content": "# Webhooks\n\n## GET /v1/webhooks/{webhook_id}/deliveries\n\nView recent delivery attempts for a webhook.",
+            },
+            {
+                "path": "docs/api-reference/audit.md",
+                "relative_path": "api-reference/audit.md",
+                "content": "# Audit\n\nTrack system audit trails and operational events.",
+            },
+        ]
+        result = analyze_patch(
+            patch,
+            docs=docs,
+            repository="novyxlabs/change-intelligence",
+        )
+
+        self.assertEqual(result["summary"]["changed_surfaces"], ["/v1/webhooks/{webhook_id}/deliveries"])
+        self.assertEqual(result["recommendations"][0]["relative_path"], "api-reference/webhooks.md")
+        self.assertTrue(
+            any("Mentions changed routes or APIs" in line for line in result["recommendations"][0]["evidence"])
+        )
+
+    def test_test_file_routes_do_not_outrank_real_product_surfaces(self):
+        patch = """diff --git a/change_intelligence/server.py b/change_intelligence/server.py
+index 1111111..2222222 100644
+--- a/change_intelligence/server.py
++++ b/change_intelligence/server.py
+@@ -1,0 +1,2 @@
++# POST /v1/webhooks
++# GET /v1/webhooks/{webhook_id}/deliveries
+diff --git a/tests/test_service.py b/tests/test_service.py
+index 2222222..3333333 100644
+--- a/tests/test_service.py
++++ b/tests/test_service.py
+@@ -1,0 +1,2 @@
++request(\"GET /v1/search\")
++request(\"POST /v1/search/reindex\")
+"""
+        docs = [
+            {
+                "path": "docs/api-reference/webhooks.md",
+                "relative_path": "api-reference/webhooks.md",
+                "content": "# Webhooks\n\n## POST /v1/webhooks\n\nCreate webhook.\n\n## GET /v1/webhooks/{webhook_id}/deliveries\n\nDelivery history.",
+            },
+            {
+                "path": "docs/api-reference/search.md",
+                "relative_path": "api-reference/search.md",
+                "content": "# Search\n\n## GET /v1/search\n\nSearch.\n\n## POST /v1/search/reindex\n\nReindex.",
+            },
+        ]
+        result = analyze_patch(patch, docs=docs, repository="novyxlabs/change-intelligence")
+
+        self.assertEqual(result["recommendations"][0]["relative_path"], "api-reference/webhooks.md")
+        self.assertEqual(
+            result["summary"]["changed_surfaces"],
+            ["/v1/webhooks", "/v1/webhooks/{webhook_id}/deliveries"],
+        )
 
 if __name__ == "__main__":
     unittest.main()
