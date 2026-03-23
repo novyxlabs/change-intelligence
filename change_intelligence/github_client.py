@@ -26,6 +26,7 @@ class GitHubConfig:
 class GitHubClient:
     def __init__(self, config: GitHubConfig):
         self.config = config
+        self._repo_installation_cache: Dict[tuple[str, str], int] = {}
 
     @classmethod
     def from_env(cls) -> Optional["GitHubClient"]:
@@ -106,6 +107,23 @@ class GitHubClient:
             token=self._app_jwt(),
         )
         return response.json()["token"]
+
+    def repository_installation_id(self, owner: str, repo: str) -> Optional[int]:
+        if self.config.token:
+            return None
+        cache_key = (owner, repo)
+        if cache_key in self._repo_installation_cache:
+            return self._repo_installation_cache[cache_key]
+        response = self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/installation",
+            token=self._app_jwt(),
+        )
+        installation_id = response.json().get("id")
+        if not isinstance(installation_id, int):
+            raise ValueError(f"Missing installation id for {owner}/{repo}.")
+        self._repo_installation_cache[cache_key] = installation_id
+        return installation_id
 
     def pull_request_files(
         self,
@@ -246,7 +264,8 @@ class GitHubClient:
         direction: str = "desc",
         per_page: int = 30,
     ) -> List[Dict[str, object]]:
-        token = self._installation_token(None)
+        installation_id = self.repository_installation_id(owner, repo)
+        token = self._installation_token(installation_id)
         response = self._request(
             "GET",
             f"/repos/{owner}/{repo}/pulls",
