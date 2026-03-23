@@ -4,7 +4,7 @@ import argparse
 import json
 import os
 from pathlib import Path
-from typing import Dict, Iterable
+from typing import Dict, Iterable, List
 
 from .novyx_store import NovyxConfig, NovyxStore
 
@@ -33,6 +33,25 @@ def memory_sort_key(memory: Dict[str, object]) -> str:
         if isinstance(value, str):
             return value
     return ""
+
+
+def metadata_for(memory: Dict[str, object]) -> Dict[str, object]:
+    metadata = memory.get("metadata")
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def area_for_changed_files(changed_files: object) -> str:
+    if not isinstance(changed_files, list) or not changed_files:
+        return "unknown"
+    path = next((item for item in changed_files if isinstance(item, str) and item), "")
+    if not path:
+        return "unknown"
+    parts = Path(path).parts
+    if len(parts) >= 2:
+        return "/".join(parts[:2])
+    if parts:
+        return parts[0]
+    return "unknown"
 
 
 def collapse_latest_by_context(memories: Iterable[Dict[str, object]]) -> list[Dict[str, object]]:
@@ -75,6 +94,77 @@ def summarize(feedback: Iterable[Dict[str, object]], runs: Iterable[Dict[str, ob
             "suppressed": suppressed,
         },
     }
+
+
+def summarize_hotspots(feedback: Iterable[Dict[str, object]], runs: Iterable[Dict[str, object]]) -> List[Dict[str, object]]:
+    latest_feedback = collapse_latest_by_context(feedback)
+    latest_runs = collapse_latest_by_context(runs)
+    feedback_by_context = {
+        item.get("context"): item
+        for item in latest_feedback
+        if isinstance(item.get("context"), str)
+    }
+
+    hotspots: Dict[str, Dict[str, object]] = {}
+    for run in latest_runs:
+        context = run.get("context")
+        metadata = metadata_for(run)
+        area = area_for_changed_files(metadata.get("changed_files"))
+        bucket = hotspots.setdefault(
+            area,
+            {
+                "area": area,
+                "repository": repository_for(run),
+                "runs": 0,
+                "commented": 0,
+                "suppressed": 0,
+                "correct": 0,
+                "wrong_doc": 0,
+                "missed_doc": 0,
+                "top_docs": {},
+            },
+        )
+        bucket["runs"] += 1
+        if "commented" in (run.get("tags") or []):
+            bucket["commented"] += 1
+        if "suppressed" in (run.get("tags") or []):
+            bucket["suppressed"] += 1
+        top_doc = metadata.get("top_doc")
+        if isinstance(top_doc, str) and top_doc:
+            top_docs = bucket["top_docs"]
+            top_docs[top_doc] = top_docs.get(top_doc, 0) + 1
+
+        feedback_item = feedback_by_context.get(context)
+        if not feedback_item:
+            continue
+        tags = set(feedback_item.get("tags") or [])
+        if "correct" in tags:
+            bucket["correct"] += 1
+        if "wrong-doc" in tags:
+            bucket["wrong_doc"] += 1
+        if "missed-doc" in tags:
+            bucket["missed_doc"] += 1
+
+    results: List[Dict[str, object]] = []
+    for item in hotspots.values():
+        top_docs = item.pop("top_docs")
+        common_doc = None
+        if isinstance(top_docs, dict) and top_docs:
+            common_doc = max(sorted(top_docs), key=lambda key: top_docs[key])
+        item["false_positive_rate"] = compute_rate(int(item["wrong_doc"]), int(item["commented"]))
+        item["miss_rate"] = compute_rate(int(item["missed_doc"]), int(item["runs"]))
+        item["top_doc"] = common_doc
+        results.append(item)
+
+    results.sort(
+        key=lambda item: (
+            int(item["wrong_doc"]) + int(item["missed_doc"]),
+            int(item["runs"]),
+            str(item["area"]),
+        ),
+        reverse=True,
+    )
+    return results[:10]
 
 
 def compute_metrics(store: NovyxStore, limit: int = 500) -> dict[str, object]:
@@ -139,6 +229,7 @@ def compute_metrics(store: NovyxStore, limit: int = 500) -> dict[str, object]:
         repo_feedback = [item for item in feedback if repository_for(item) == repository]
         repo_runs = [item for item in runs if repository_for(item) == repository]
         metrics["repositories"][repository] = summarize(repo_feedback, repo_runs)
+    metrics["hotspots"] = summarize_hotspots(feedback, runs)
 
     analysis_runs = int(metrics["analysis_runs"])
     metrics["proof_window"] = {

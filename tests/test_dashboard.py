@@ -39,6 +39,7 @@ class FakeStore:
                     "top_confidence": 84,
                     "comment_suppressed": False,
                     "recommendation_count": 3,
+                    "changed_files": ["src/billing/createCheckoutSession.ts"],
                 },
             }
         ]
@@ -73,6 +74,8 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(payload["metrics"]["analysis_runs"], 1)
         self.assertEqual(payload["recent_runs"][0]["top_doc"], "billing.md")
         self.assertEqual(payload["recent_feedback"][0]["feedback"], "correct")
+        self.assertEqual(payload["metrics"]["hotspots"][0]["area"], "src/billing")
+        self.assertEqual(payload["metrics"]["hotspots"][0]["top_doc"], "billing.md")
         self.assertEqual(payload["errors"], [])
 
     def test_build_dashboard_payload_surfaces_partial_errors(self):
@@ -87,6 +90,7 @@ class DashboardTests(unittest.TestCase):
         html = render_dashboard_html(build_dashboard_payload(FakeStore(), limit=10))
         self.assertIn("Change Intelligence Dashboard", html)
         self.assertIn("Recent Analysis Runs", html)
+        self.assertIn("Drift Hotspots", html)
         self.assertIn("novyxlabs/novyx-core", html)
         self.assertIn("billing.md", html)
 

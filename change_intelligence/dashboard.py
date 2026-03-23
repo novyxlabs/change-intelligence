@@ -30,6 +30,7 @@ def _normalize_run(memory: Dict[str, object]) -> Dict[str, object]:
         "top_confidence": metadata.get("top_confidence"),
         "comment_suppressed": bool(metadata.get("comment_suppressed")),
         "recommendation_count": metadata.get("recommendation_count"),
+        "changed_files": metadata.get("changed_files"),
         "created_at": _memory_sort_key(memory) or None,
         "context": memory.get("context"),
     }
@@ -169,6 +170,24 @@ def _render_feedback_rows(feedback: List[Dict[str, object]]) -> str:
     )
 
 
+def _render_hotspot_rows(hotspots: object) -> str:
+    if not isinstance(hotspots, list) or not hotspots:
+        return "<tr><td colspan='8'>No hotspot data yet.</td></tr>"
+    return "".join(
+        "<tr>"
+        f"<td>{_format_value(item.get('repository'))}</td>"
+        f"<td>{_format_value(item.get('area'))}</td>"
+        f"<td>{_format_value(item.get('runs'))}</td>"
+        f"<td>{_format_value(item.get('top_doc'))}</td>"
+        f"<td>{_format_percent(item.get('false_positive_rate'))}</td>"
+        f"<td>{_format_percent(item.get('miss_rate'))}</td>"
+        f"<td>{_format_value(item.get('wrong_doc'))}</td>"
+        f"<td>{_format_value(item.get('missed_doc'))}</td>"
+        "</tr>"
+        for item in hotspots[:10]
+    )
+
+
 def render_dashboard_html(payload: Dict[str, object]) -> str:
     metrics = payload.get("metrics")
     metrics = metrics if isinstance(metrics, dict) else {}
@@ -232,6 +251,13 @@ def render_dashboard_html(payload: Dict[str, object]) -> str:
         <table>
           <thead><tr><th>Repository</th><th>Runs</th><th>Top-1</th><th>Comment</th><th>False-positive</th></tr></thead>
           <tbody>{_render_repo_rows(metrics.get("repositories"))}</tbody>
+        </table>
+      </section>
+      <section class="panel">
+        <h2>Drift Hotspots</h2>
+        <table>
+          <thead><tr><th>Repository</th><th>Area</th><th>Runs</th><th>Common doc</th><th>False-positive</th><th>Miss rate</th><th>Wrong doc</th><th>Missed doc</th></tr></thead>
+          <tbody>{_render_hotspot_rows(metrics.get("hotspots"))}</tbody>
         </table>
       </section>
       <section class="panel">
