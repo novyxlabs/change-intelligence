@@ -41,7 +41,7 @@ class FakeNovyxStore:
     def rank_signals(self, repository, changed_files):
         self.calls.append(("rank", repository, list(changed_files), self.learned))
         if self.learned:
-            return {"billing.md": {"graph_hits": 2, "accepted_hits": 2, "rejected_hits": 0}}
+            return {"billing.md": {"graph_hits": 2, "accepted_hits": 2, "rejected_hits": 0, "exact_file_hits": 1}}
         return {"billing.md": {"graph_hits": 1, "accepted_hits": 0, "rejected_hits": 0}}
 
     def learn_from_merge(self, repository, pull_request_number, changed_files, predicted_docs, actual_docs):
@@ -172,6 +172,7 @@ class ChangeIntelligenceServiceTests(unittest.TestCase):
         self.assertIn("### Why This Is High Confidence", result["payload"]["comment_body"])
         self.assertIn("### Risk If Ignored", result["payload"]["comment_body"])
         self.assertIn("The top doc mentions the changed symbols directly.", result["payload"]["comment_body"])
+        self.assertTrue(any("Novyx remembers this exact changed file mapping" in line for line in result["payload"]["recommendations"][0]["evidence"]))
         self.assertEqual(result["payload"]["trace"]["evaluation"]["health_score"], 98)
 
     def test_process_github_event_stays_silent_below_threshold(self):

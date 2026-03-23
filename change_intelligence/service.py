@@ -87,6 +87,8 @@ def apply_learning_feedback(
             "graph_hits": int(value.get("graph_hits", 0)),
             "accepted_hits": int(value.get("accepted_hits", 0)),
             "rejected_hits": int(value.get("rejected_hits", 0)),
+            "missed_hits": int(value.get("missed_hits", 0)),
+            "exact_file_hits": int(value.get("exact_file_hits", 0)),
         }
         for key, value in learned_signals.items()
     }
@@ -102,6 +104,7 @@ def apply_learning_feedback(
         bucket = signals.setdefault(doc, {"graph_hits": 0, "accepted_hits": 0, "rejected_hits": 0})
         bucket["graph_hits"] += 1
         bucket["accepted_hits"] += 1
+        bucket["missed_hits"] = int(bucket.get("missed_hits", 0)) + 1
 
     for doc in learning_feedback.get("rejected", []):
         bucket = signals.setdefault(doc, {"graph_hits": 0, "accepted_hits": 0, "rejected_hits": 0})

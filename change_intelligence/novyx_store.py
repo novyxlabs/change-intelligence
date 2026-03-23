@@ -49,6 +49,7 @@ class NovyxStore:
                 "observation": memory.observation,
                 "score": memory.score,
                 "tags": memory.tags,
+                "metadata": getattr(memory, "metadata", None),
             }
             for memory in results
         ]
@@ -87,6 +88,8 @@ class NovyxStore:
                     "graph_hits": 0,
                     "accepted_hits": 0,
                     "rejected_hits": 0,
+                    "missed_hits": 0,
+                    "exact_file_hits": 0,
                 },
             )
             tags = set(memory.get("tags") or [])
@@ -94,6 +97,11 @@ class NovyxStore:
                 bucket["accepted_hits"] += 1
             if "rejected" in tags:
                 bucket["rejected_hits"] += 1
+            if "missed" in tags:
+                bucket["missed_hits"] += 1
+            observation = str(memory.get("observation") or "")
+            if any(path in observation for path in changed_files):
+                bucket["exact_file_hits"] += 1
 
         return signals
 
@@ -119,6 +127,8 @@ class NovyxStore:
                     "graph_hits": 0,
                     "accepted_hits": 0,
                     "rejected_hits": 0,
+                    "missed_hits": 0,
+                    "exact_file_hits": 0,
                 },
             )
             bucket[key] += 1

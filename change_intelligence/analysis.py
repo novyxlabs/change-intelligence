@@ -477,14 +477,24 @@ def score_document(
         score += graph_hits * 18
         evidence.append(f"Learned Novyx graph links connect changed files to `{doc.relative_path}` ({graph_hits} hits)")
 
+    exact_file_hits = int(doc_signal.get("exact_file_hits", 0) or 0)
+    if exact_file_hits:
+        score += exact_file_hits * 26
+        evidence.append(f"Novyx remembers this exact changed file mapping to `{doc.relative_path}` ({exact_file_hits} matches)")
+
     accepted_hits = int(doc_signal.get("accepted_hits", 0) or 0)
     if accepted_hits:
-        score += accepted_hits * 12
+        score += accepted_hits * 22
         evidence.append(f"Past merged PRs reinforced `{doc.relative_path}` as a correct target ({accepted_hits} confirmations)")
+
+    missed_hits = int(doc_signal.get("missed_hits", 0) or 0)
+    if missed_hits:
+        score += missed_hits * 18
+        evidence.append(f"Past merges taught Novyx that `{doc.relative_path}` was missed for similar changes ({missed_hits} misses)")
 
     rejected_hits = int(doc_signal.get("rejected_hits", 0) or 0)
     if rejected_hits:
-        score -= rejected_hits * 18
+        score -= rejected_hits * 24
         evidence.append(f"Past merged PRs rejected `{doc.relative_path}` for similar changes ({rejected_hits} misses)")
 
     pattern_hits = pattern_doc_hits.get(doc.relative_path, 0) + pattern_doc_hits.get(Path(doc.relative_path).name, 0)
@@ -516,6 +526,8 @@ def score_document(
         evidence.append(f"PR already changed `{doc.relative_path}`, confirming relevance")
 
     confidence = max(0, min(100, score))
+    if (accepted_hits >= 2 or exact_file_hits >= 1 or missed_hits >= 2) and rejected_hits == 0:
+        confidence = max(confidence, 72)
     if is_security_fix(diff) and not domain_overlap:
         confidence = min(confidence, 45)
         score = min(score, 45)
@@ -527,10 +539,11 @@ def score_document(
     if (
         rejected_hits > 0
         and accepted_hits == 0
+        and missed_hits == 0
         and doc.relative_path not in actual_docs_changed
         and Path(doc.relative_path).name not in actual_docs_changed
     ):
-        confidence = min(confidence, 45)
+        confidence = min(confidence, 35 if rejected_hits >= 2 else 45)
         evidence.append(f"Confidence capped because Novyx learned `{doc.relative_path}` was a false positive for similar changes")
     return {
         "path": doc.path,
