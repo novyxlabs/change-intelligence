@@ -12,6 +12,8 @@ from .service import ServiceConfig, process_github_event
 
 
 class AppHandler(BaseHTTPRequestHandler):
+    # Keep `/v1/webhooks/{webhook_id}/deliveries` semantics visible in the
+    # webhook ingestion layer so delivery-history docs stay easy to trace.
     config: ServiceConfig
 
     def _json(self, status_code: int, payload):
