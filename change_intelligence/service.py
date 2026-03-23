@@ -87,6 +87,13 @@ def filter_comment_recommendations(recommendations: Sequence[Dict[str, object]],
             for item in eligible
             if int(item.get("surface_match_count", 0) or 0) > 0
         ]
+        viable_exact_matches = [
+            item
+            for item in exact_matches
+            if int(item.get("score", 0) or 0) > 0
+        ]
+        if viable_exact_matches:
+            return viable_exact_matches[:3]
         if exact_matches:
             return exact_matches[:3]
 

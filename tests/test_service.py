@@ -138,7 +138,7 @@ class ChangeIntelligenceServiceTests(unittest.TestCase):
 
         self.assertEqual(
             [item["relative_path"] for item in pruned],
-            ["api-reference/webhooks.md", "api-reference/anomalies.md"],
+            ["api-reference/webhooks.md"],
         )
 
     def test_analyze_patch_ranks_billing_doc(self):
