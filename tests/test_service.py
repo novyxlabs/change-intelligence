@@ -168,6 +168,10 @@ class ChangeIntelligenceServiceTests(unittest.TestCase):
         self.assertEqual(record_call[5]["release_notes"]["recommended_docs"][0], "billing.md")
         self.assertEqual(record_call[5]["release_notes"]["confidence"], result["payload"]["release_notes"]["confidence"])
         self.assertEqual(github_client.comments[0][2], 42)
+        self.assertIn("### What Changed", result["payload"]["comment_body"])
+        self.assertIn("### Why This Is High Confidence", result["payload"]["comment_body"])
+        self.assertIn("### Risk If Ignored", result["payload"]["comment_body"])
+        self.assertIn("The top doc mentions the changed symbols directly.", result["payload"]["comment_body"])
         self.assertEqual(result["payload"]["trace"]["evaluation"]["health_score"], 98)
 
     def test_process_github_event_stays_silent_below_threshold(self):
@@ -400,6 +404,9 @@ index 1111111..2222222 100644
         self.assertEqual(result["payload"]["release_notes"]["affected_surfaces"], ["/v1/search", "/v1/search/reindex"])
         self.assertFalse(result["payload"]["support_updates"]["included_in_report"])
         self.assertFalse(result["payload"]["onboarding_updates"]["included_in_report"])
+        self.assertIn("API or route behavior changed:", result["payload"]["comment_body"])
+        self.assertIn("Exact route or API surface matches were found in the top doc.", result["payload"]["comment_body"])
+        self.assertIn("`search-reference.md` is likely now misleading", result["payload"]["comment_body"])
 
 
 if __name__ == "__main__":

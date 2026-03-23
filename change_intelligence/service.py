@@ -110,6 +110,87 @@ def apply_learning_feedback(
     return signals
 
 
+def summarize_change_shape(
+    summary: Dict[str, object],
+    support_updates: Dict[str, object],
+    onboarding_updates: Dict[str, object],
+) -> List[str]:
+    bullets: List[str] = []
+    changed_surfaces = summary.get("changed_surfaces", [])
+    changed_symbols = summary.get("changed_symbols", [])
+
+    if changed_surfaces:
+        bullets.append(
+            "API or route behavior changed: "
+            + ", ".join(f"`{item}`" for item in changed_surfaces[:3])
+            + "."
+        )
+    if onboarding_updates.get("included_in_report"):
+        bullets.append("Onboarding or setup guidance is likely affected by this PR.")
+    if support_updates.get("included_in_report"):
+        bullets.append("Support-facing answers or troubleshooting docs are likely affected.")
+    if not bullets and changed_symbols:
+        bullets.append(
+            "Implementation behavior changed in: "
+            + ", ".join(f"`{item}`" for item in changed_symbols[:4])
+            + "."
+        )
+    if not bullets:
+        bullets.append("Product behavior changed in a way that may have left docs behind.")
+    return bullets[:3]
+
+
+def summarize_confidence_reasons(recommendations: Sequence[Dict[str, object]]) -> List[str]:
+    if not recommendations:
+        return []
+
+    evidence = recommendations[0].get("evidence", [])
+    reasons: List[str] = []
+
+    if any("Mentions changed routes or APIs:" in item for item in evidence):
+        reasons.append("Exact route or API surface matches were found in the top doc.")
+    if any("Mentions changed symbols:" in item for item in evidence):
+        reasons.append("The top doc mentions the changed symbols directly.")
+    if any("Ownership rule matched" in item for item in evidence):
+        reasons.append("Repo-specific ownership rules map this code area to the doc target.")
+    if any("Learned Novyx graph links" in item or "Past merged PRs reinforced" in item for item in evidence):
+        reasons.append("Novyx memory reinforced this doc target from prior repo history.")
+    if any("Shared path terms" in item or "Shared change terms" in item for item in evidence):
+        reasons.append("The diff language overlaps strongly with the doc content.")
+
+    if not reasons:
+        reasons.append("The ranking combined diff overlap, symbol matches, and repo history into a strong target.")
+    return reasons[:3]
+
+
+def summarize_risk_if_ignored(
+    summary: Dict[str, object],
+    recommendations: Sequence[Dict[str, object]],
+    support_updates: Dict[str, object],
+    onboarding_updates: Dict[str, object],
+) -> List[str]:
+    risks: List[str] = []
+    changed_surfaces = summary.get("changed_surfaces", [])
+
+    if recommendations:
+        top_doc = recommendations[0]["relative_path"]
+        if changed_surfaces:
+            risks.append(
+                f"`{top_doc}` is likely now misleading about "
+                + ", ".join(f"`{item}`" for item in changed_surfaces[:3])
+                + "."
+            )
+        else:
+            risks.append(f"`{top_doc}` is likely now out of sync with the current product behavior.")
+    if onboarding_updates.get("included_in_report"):
+        risks.append("New users may hit outdated setup or first-run guidance.")
+    if support_updates.get("included_in_report"):
+        risks.append("Support may answer from stale troubleshooting or FAQ content.")
+    if not risks:
+        risks.append("Reviewers may merge a product change while leaving the written behavior behind.")
+    return risks[:3]
+
+
 def build_comment(
     repository: str,
     pull_request_number: int,
@@ -117,6 +198,8 @@ def build_comment(
     recommendations: Sequence[Dict[str, object]],
     patterns: Sequence[Dict[str, object]],
     threshold: int,
+    support_updates: Dict[str, object],
+    onboarding_updates: Dict[str, object],
 ) -> str:
     lines = [
         "## Change Intelligence",
@@ -126,6 +209,21 @@ def build_comment(
         f"Confidence threshold: `{threshold}`",
         "",
     ]
+    lines.extend(["### What Changed", ""])
+    for bullet in summarize_change_shape(summary, support_updates, onboarding_updates):
+        lines.append(f"- {bullet}")
+    lines.append("")
+
+    lines.extend(["### Why This Is High Confidence", ""])
+    for bullet in summarize_confidence_reasons(recommendations):
+        lines.append(f"- {bullet}")
+    lines.append("")
+
+    lines.extend(["### Risk If Ignored", ""])
+    for bullet in summarize_risk_if_ignored(summary, recommendations, support_updates, onboarding_updates):
+        lines.append(f"- {bullet}")
+    lines.append("")
+
     if patterns:
         lines.extend(["### Similar Historical Patterns", ""])
         for item in patterns[:5]:
@@ -330,6 +428,8 @@ def finalize_event_response(
             comment_recommendations,
             patterns,
             config.confidence_threshold,
+            analysis["support_updates"],
+            analysis["onboarding_updates"],
         )
         if config.github_client is not None and context.pull_request_number:
             comment = config.github_client.upsert_issue_comment(
