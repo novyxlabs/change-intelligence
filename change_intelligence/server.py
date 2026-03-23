@@ -106,11 +106,12 @@ def build_config() -> ServiceConfig:
 
 
 def run() -> None:
+    host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "3030"))
     handler = AppHandler
     handler.config = build_config()
-    server = ThreadingHTTPServer(("127.0.0.1", port), handler)
-    print(f"change-intelligence python server listening on http://127.0.0.1:{port}")
+    server = ThreadingHTTPServer((host, port), handler)
+    print(f"change-intelligence python server listening on http://{host}:{port}")
     server.serve_forever()
 
 

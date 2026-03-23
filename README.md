@@ -98,6 +98,35 @@ Run the production server with credentials:
 GITHUB_WEBHOOK_SECRET=dev-secret NOVYX_API_KEY=nram_your_key GITHUB_TOKEN=ghp_your_token .venv/bin/python -m change_intelligence.server
 ```
 
+## Deploying To Fly.io
+
+This repo now ships with a Fly.io deploy path for the Python webhook service.
+
+Files:
+
+- `Dockerfile` builds the production image
+- `fly.toml` defines the Fly app, port, and `/health` check
+
+Typical setup:
+
+```bash
+fly apps create change-intelligence-demo
+fly secrets set GITHUB_WEBHOOK_SECRET=dev-secret NOVYX_API_KEY=nram_your_key
+fly deploy
+```
+
+If you use GitHub App auth instead of a personal token, also set:
+
+```bash
+fly secrets set GITHUB_APP_ID=123456 GITHUB_APP_PRIVATE_KEY="$(cat /path/to/private-key.pem)"
+```
+
+Optional runtime config:
+
+- `DASHBOARD_SECRET` to protect `/dashboard` and `/api/dashboard`
+- `DOCS_REPO` and `DOCS_PATH` when docs are fetched from another repository
+- `CONFIDENCE_THRESHOLD` to tune when the app comments on pull requests
+
 Dashboard endpoints:
 
 - `GET /dashboard` returns a read-only internal HTML dashboard
