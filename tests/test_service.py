@@ -208,6 +208,34 @@ class ChangeIntelligenceServiceTests(unittest.TestCase):
         self.assertIsNone(result["payload"]["comment_body"])
         self.assertEqual(github_client.deleted_comments[0][2], 42)
 
+    def test_process_github_event_uses_top_level_number_from_real_github_payload(self):
+        patch = (FIXTURES / "sample.patch").read_text(encoding="utf8")
+        body = json.dumps(
+            {
+                "action": "opened",
+                "number": 42,
+                "repository": {"full_name": "acme/app"},
+                "pull_request": {
+                    "patch": patch,
+                    "head": {"sha": "abc123"},
+                },
+            }
+        )
+        github_client = FakeGitHubClient(patch)
+        result = process_github_event(
+            body,
+            None,
+            ServiceConfig(
+                docs_root=FIXTURES / "repo" / "docs",
+                github_client=github_client,
+                confidence_threshold=60,
+            ),
+        )
+
+        self.assertEqual(result["status_code"], 200)
+        self.assertEqual(result["payload"]["pull_request_number"], 42)
+        self.assertEqual(github_client.file_requests[0][2], 42)
+
     def test_invalid_signature_is_rejected(self):
         result = process_github_event(
             "{}",

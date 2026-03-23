@@ -150,7 +150,7 @@ def collect_event_context(payload: Dict[str, object], config: ServiceConfig) -> 
     action = payload.get("action")
     pull_request = payload.get("pull_request") or {}
     repository = (payload.get("repository") or {}).get("full_name") or "unknown/repo"
-    pull_request_number = pull_request.get("number") or 0
+    pull_request_number = int(pull_request.get("number") or payload.get("number") or 0)
     head_sha = ((pull_request.get("head") or {}).get("sha")) or None
     owner, repo = split_repository(repository)
     docs_repo = config.docs_repo or repository
