@@ -12,7 +12,7 @@
     "test:py": "python3 -m pytest -q",
     "analyze:fixture": "node ./src/cli.js --diff ./test/fixtures/sample.patch --docs ./test/fixtures/repo/docs --code ./test/fixtures/repo/src",
     "demo:python": "DOCS_ROOT=./test/fixtures/showcase/docs python3 -m change_intelligence.run_event --event-path ./test/fixtures/showcase-event.json",
-    "proof:export": "python3 -m change_intelligence.metrics --case-studies-path ./proof/case-studies.md --output-path ./proof/metrics.json",
+    "proof:export": "python3 -m change_intelligence.metrics --case-studies-path ./proof/case-studies.md --founder-digest-path ./proof/founder-digest.md --output-path ./proof/metrics.json",
     "server": "python3 -m change_intelligence.server",
     "server:reference": "node ./src/server.js"
   },

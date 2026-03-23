@@ -148,6 +148,12 @@ Export proof artifacts from accepted runs:
 npm run proof:export
 ```
 
+That writes:
+
+- `proof/case-studies.md`
+- `proof/founder-digest.md`
+- `proof/metrics.json`
+
 ## Run The Service
 
 Start the Python webhook service locally:

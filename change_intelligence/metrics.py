@@ -297,6 +297,90 @@ def render_case_studies_markdown(case_studies: Iterable[Dict[str, object]]) -> s
     return "\n".join(lines).rstrip()
 
 
+def render_founder_digest_markdown(metrics: Dict[str, object]) -> str:
+    case_studies = metrics.get("case_studies") or []
+    trend = metrics.get("trend") or {}
+    tiers = metrics.get("confidence_tiers") or {}
+    hotspots = metrics.get("hotspots") or []
+    proof_window = metrics.get("proof_window") or {}
+
+    top_case = case_studies[0] if isinstance(case_studies, list) and case_studies else None
+    top_hotspot = hotspots[0] if isinstance(hotspots, list) and hotspots else None
+    counts = tiers.get("counts") if isinstance(tiers, dict) else {}
+    lines = [
+        "# Change Intelligence Founder Digest",
+        "",
+        "Short weekly narrative generated from real runs, reviewer feedback, and Novyx-backed quality signals.",
+        "",
+        "## This Week",
+        "",
+        f"- Analysis runs: `{metrics.get('analysis_runs', 0)}`",
+        f"- Reviewer feedback events: `{metrics.get('feedback_total', 0)}`",
+        f"- Top-1 correctness: `{float(metrics.get('top_1_rate', 0.0)) * 100:.0f}%`",
+        f"- False-positive rate: `{float(metrics.get('false_positive_rate', 0.0)) * 100:.0f}%`",
+        "",
+        "## Strongest Proof",
+        "",
+    ]
+
+    if isinstance(top_case, dict):
+        lines.extend(
+            [
+                f"Best accepted example this week came from `{top_case.get('repository')}` PR `#{top_case.get('pull_request_number')}`.",
+                f"A change in `{top_case.get('changed_file') or '-'}` correctly pointed to `{top_case.get('top_doc') or '-'}` with confidence `{top_case.get('top_confidence') or '-'}` in tier `{top_case.get('confidence_tier') or '-'}`.",
+                "",
+            ]
+        )
+    else:
+        remaining = int(proof_window.get("remaining_to_minimum") or 0)
+        lines.extend(
+            [
+                "No accepted proof candidate yet.",
+                f"Need `{remaining}` more analysis runs to hit the minimum proof window.",
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            "## Trust Signals",
+            "",
+            f"- Top-1 trend: `{trend.get('top_1_rate', 'flat')}`",
+            f"- False-positive trend: `{trend.get('false_positive_rate', 'flat')}`",
+            f"- Miss trend: `{trend.get('miss_rate', 'flat')}`",
+            f"- Confidence mix: `{counts.get('high_confidence', 0) if isinstance(counts, dict) else 0}` high-confidence, `{counts.get('review_recommended', 0) if isinstance(counts, dict) else 0}` review-recommended, `{counts.get('silent', 0) if isinstance(counts, dict) else 0}` silent",
+            "",
+            "## Where It Is Still Noisy",
+            "",
+        ]
+    )
+
+    if isinstance(top_hotspot, dict) and int(top_hotspot.get("wrong_doc", 0)) + int(top_hotspot.get("missed_doc", 0)) > 0:
+        lines.extend(
+            [
+                f"Noisiest area right now is `{top_hotspot.get('area')}` in `{top_hotspot.get('repository')}`.",
+                f"It has `{top_hotspot.get('runs', 0)}` runs, false-positive rate `{float(top_hotspot.get('false_positive_rate', 0.0)) * 100:.0f}%`, miss rate `{float(top_hotspot.get('miss_rate', 0.0)) * 100:.0f}%`, and most often points at `{top_hotspot.get('top_doc') or '-'}`.",
+                "",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "No noisy hotspot is standing out yet.",
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            "## Read On It",
+            "",
+            "Change Intelligence is getting stronger when accepted repo-specific patterns overpower shallow lexical overlap. The product still needs more accepted runs and fewer noisy hotspots before broad claims about reliability.",
+        ]
+    )
+    return "\n".join(lines).rstrip()
+
+
 def compute_metrics(store: NovyxStore, limit: int = 500) -> dict[str, object]:
     feedback = store.list_memories(["ci-feedback"], limit=limit)
     runs = store.list_memories(["analysis-run"], limit=limit)
@@ -381,6 +465,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Compute daily change-intelligence metrics from Novyx.")
     parser.add_argument("--output-path")
     parser.add_argument("--case-studies-path", help="Optional path to write markdown case studies from accepted runs")
+    parser.add_argument("--founder-digest-path", help="Optional path to write a short founder-style weekly digest")
     parser.add_argument("--limit", type=int, default=500)
     args = parser.parse_args()
 
@@ -398,6 +483,11 @@ def main() -> None:
     if args.case_studies_path:
         Path(args.case_studies_path).write_text(
             render_case_studies_markdown(metrics.get("case_studies") or []),
+            encoding="utf8",
+        )
+    if args.founder_digest_path:
+        Path(args.founder_digest_path).write_text(
+            render_founder_digest_markdown(metrics),
             encoding="utf8",
         )
     print(rendered)

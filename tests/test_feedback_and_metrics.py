@@ -1,7 +1,11 @@
 import unittest
 
 from change_intelligence.feedback import parse_feedback_command, process_feedback_event
-from change_intelligence.metrics import compute_metrics, render_case_studies_markdown
+from change_intelligence.metrics import (
+    compute_metrics,
+    render_case_studies_markdown,
+    render_founder_digest_markdown,
+)
 
 
 class FakeStore:
@@ -238,6 +242,54 @@ class FeedbackAndMetricsTests(unittest.TestCase):
         self.assertIn("# Change Intelligence Case Studies", markdown)
         self.assertIn("novyxlabs/novyx-core #12", markdown)
         self.assertIn("`billing.md`", markdown)
+
+    def test_render_founder_digest_markdown(self):
+        metrics = {
+            "analysis_runs": 12,
+            "feedback_total": 7,
+            "top_1_rate": 0.75,
+            "false_positive_rate": 0.2,
+            "trend": {
+                "top_1_rate": "up 10 pts",
+                "false_positive_rate": "down 5 pts",
+                "miss_rate": "flat",
+            },
+            "confidence_tiers": {
+                "counts": {
+                    "high_confidence": 4,
+                    "review_recommended": 5,
+                    "silent": 3,
+                }
+            },
+            "case_studies": [
+                {
+                    "repository": "novyxlabs/novyx-core",
+                    "pull_request_number": 12,
+                    "changed_file": "src/billing/createCheckoutSession.ts",
+                    "top_doc": "billing.md",
+                    "top_confidence": 84,
+                    "confidence_tier": "review-recommended",
+                }
+            ],
+            "hotspots": [
+                {
+                    "area": "src/billing",
+                    "repository": "novyxlabs/novyx-core",
+                    "runs": 5,
+                    "wrong_doc": 1,
+                    "missed_doc": 1,
+                    "false_positive_rate": 0.25,
+                    "miss_rate": 0.2,
+                    "top_doc": "billing.md",
+                }
+            ],
+            "proof_window": {"remaining_to_minimum": 8},
+        }
+        markdown = render_founder_digest_markdown(metrics)
+        self.assertIn("# Change Intelligence Founder Digest", markdown)
+        self.assertIn("Best accepted example this week came from `novyxlabs/novyx-core` PR `#12`.", markdown)
+        self.assertIn("- Top-1 trend: `up 10 pts`", markdown)
+        self.assertIn("Noisiest area right now is `src/billing`", markdown)
 
     def test_compute_metrics_surfaces_novyx_errors(self):
         store = BrokenObservabilityStore(feedback=[], runs=[])
