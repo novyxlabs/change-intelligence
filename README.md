@@ -55,6 +55,25 @@ Run the full test suite:
 npm test
 ```
 
+Run the strongest local demo path:
+
+```bash
+npm run demo:python
+```
+
+That demo exercises the Python production path and shows:
+
+- primary docs impact
+- release-note draft generation
+- support knowledge updates
+- onboarding/tour drift detection
+
+Run the Python webhook service:
+
+```bash
+.venv/bin/python -m change_intelligence.server
+```
+
 Analyze a patch file with the reference Node CLI:
 
 ```bash

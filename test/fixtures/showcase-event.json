@@ -1,0 +1,9 @@
+{
+  "action": "opened",
+  "repository": { "full_name": "acme/app" },
+  "pull_request": {
+    "number": 42,
+    "title": "Add search and reindex setup flow",
+    "patch": "diff --git a/src/api/search.py b/src/api/search.py\nindex 1111111..2222222 100644\n--- a/src/api/search.py\n+++ b/src/api/search.py\n@@ -10,0 +11,5 @@\n+@router.get(\"/v1/search\")\n+def search():\n+    pass\n+app.post(\"/v1/search/reindex\")\n+def login_setup():\n"
+  }
+}
