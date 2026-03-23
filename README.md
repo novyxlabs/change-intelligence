@@ -1,15 +1,48 @@
 # Change Intelligence
 
-`change-intelligence` is a standalone GitHub App for product-change intelligence backed by Novyx.
+`change-intelligence` is an open-source GitHub app that catches docs drift from product code changes.
 
-The first job is narrow and useful:
+It answers one concrete question:
 
 > When product code changes, identify likely affected docs and generate a reviewable update brief with evidence.
 
-This repo follows the useful part of the `gstack` pattern: a constrained workflow, explicit specialist output, and docs tied directly to source changes instead of vague "AI docs" promises.
+That is the wedge.
+Not "generate docs from scratch."
+Not "AI knowledge management."
+Just: tell me which docs are now stale, why, and what probably needs to change.
 
 The Python service under `change_intelligence/` is the only production runtime.
 The earlier Node implementation in `src/` remains as a reference CLI and fixture harness for the ranking logic, not as a deployed server.
+
+## Why It Exists
+
+Most teams do not have a docs-writing problem.
+They have a docs-discovery problem.
+
+When checkout, auth, search, billing, or onboarding flows change, the hard part is usually not writing a sentence. The hard part is knowing:
+
+- which docs are affected
+- whether the change touches an API surface, route, or setup step
+- what evidence justifies updating that doc
+
+`change-intelligence` is built around that narrower, higher-leverage job.
+
+## What A User Sees
+
+On a pull request, the system can post a reviewable brief that says:
+
+- these docs are probably stale
+- here is the evidence from the code diff
+- here are the changed routes, symbols, or files that caused the match
+- here is a draft release-note, support, or onboarding follow-up when confidence is high
+
+The goal is not to auto-merge content. The goal is to make stale docs obvious while the code is still under review.
+
+## Who It Is For
+
+- teams with product or API docs living near the code
+- repos where PRs frequently change behavior without updating docs
+- teams that want deterministic, evidence-first review signals before adding heavier AI layers
 
 ## What It Does
 
@@ -34,62 +67,40 @@ Most repos can generate docs. Fewer can tell you which docs are now stale and wh
 - support answers
 - release notes
 
-## Usage
+## Try It In Two Minutes
 
-Install the production runtime and test tooling:
+Install the runtime:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e '.[dev]'
 ```
 
-Run the Python webhook service:
-
-```bash
-.venv/bin/python -m change_intelligence.server
-```
-
-Run the full test suite:
-
-```bash
-npm test
-```
-
-Run the strongest local demo path:
+Run the strongest local demo:
 
 ```bash
 npm run demo:python
 ```
 
-That demo exercises the Python production path and shows:
+That demo exercises the production Python path and shows:
 
 - primary docs impact
 - release-note draft generation
 - support knowledge updates
 - onboarding/tour drift detection
 
-Run the Python webhook service:
+Run the test suite:
+
+```bash
+npm test
+```
+
+## Run The Service
+
+Start the Python webhook service locally:
 
 ```bash
 .venv/bin/python -m change_intelligence.server
-```
-
-Analyze a patch file with the reference Node CLI:
-
-```bash
-node ./src/cli.js --diff ./test/fixtures/sample.patch --docs ./test/fixtures/repo/docs --code ./test/fixtures/repo/src
-```
-
-Analyze the current git working tree from a repo with the reference Node CLI:
-
-```bash
-node ./src/cli.js --repo /path/to/repo --docs /path/to/repo/docs
-```
-
-Emit JSON with the reference Node CLI:
-
-```bash
-node ./src/cli.js --diff ./change.patch --docs ./docs --json
 ```
 
 Run the production server with credentials:
@@ -97,6 +108,43 @@ Run the production server with credentials:
 ```bash
 GITHUB_WEBHOOK_SECRET=dev-secret NOVYX_API_KEY=nram_your_key GITHUB_TOKEN=ghp_your_token .venv/bin/python -m change_intelligence.server
 ```
+
+The webhook endpoint is:
+
+```bash
+POST /webhooks/github
+```
+
+## Example Input
+
+```json
+{
+  "action": "opened",
+  "number": 42,
+  "repository": { "full_name": "acme/app" },
+  "pull_request": {
+    "title": "Add coupon support to checkout",
+    "patch": "diff --git a/src/example.ts b/src/example.ts\n..."
+  }
+}
+```
+
+## Example Output
+
+The markdown brief includes:
+
+- changed files
+- extracted symbols
+- ranked affected docs
+- evidence for each match
+- exact route/API surface matches when present
+- recommended update focus areas
+
+When confidence is strong enough, it can also include:
+
+- release-note draft
+- support-knowledge update draft
+- onboarding or setup update draft
 
 ## Deploying To Fly.io
 
@@ -127,6 +175,21 @@ Optional runtime config:
 - `DOCS_REPO` and `DOCS_PATH` when docs are fetched from another repository
 - `CONFIDENCE_THRESHOLD` to tune when the app comments on pull requests
 
+## GitHub Integration
+
+The repo includes a Python webhook service at `POST /webhooks/github`.
+
+Current behavior:
+
+- verifies `X-Hub-Signature-256` when `GITHUB_WEBHOOK_SECRET` is set
+- accepts GitHub pull request webhook payloads
+- fetches docs directly from the GitHub repo when GitHub credentials are configured
+- fetches PR file patches from GitHub when patch text is not included in the webhook payload
+- separates product/code changes from docs changes
+- runs the analysis engine with a default confidence threshold of `60`
+- upserts a marker-based PR comment on GitHub only when confidence clears the threshold
+- deletes the marker comment when a rerun drops below the threshold
+
 Dashboard endpoints:
 
 - `GET /dashboard` returns a read-only internal HTML dashboard
@@ -134,40 +197,15 @@ Dashboard endpoints:
 - both surfaces expose aggregate KPIs, proof-window progress, recent analysis runs, recent feedback, and explicit Novyx partial-failure errors
 - set `DASHBOARD_SECRET` to require the `X-Dashboard-Secret` header on both routes
 
-## Output
+## Learning Loop
 
-The markdown report includes:
+Beyond the basic docs-drift detection flow, the app can also:
 
-- changed files
-- extracted symbols
-- ranked affected docs
-- evidence for each match
-- exact route/API surface matches when present
-- recommended update focus areas
-- release-note draft when confidence clears the threshold
-- support-knowledge update draft when a support-oriented doc is a strong adjacent target
-- onboarding/tour update draft when a setup or onboarding doc is a strong adjacent target
-
-## GitHub App Wrapper
-
-The repo includes a Python webhook service at `POST /webhooks/github`.
-
-Current behavior:
-
-- verifies `X-Hub-Signature-256` when `GITHUB_WEBHOOK_SECRET` is set
-- accepts a pull-request-style JSON payload
-- fetches docs directly from the GitHub repo when GitHub credentials are configured
-- fetches PR file patches from GitHub when patch text is not included in the webhook payload
-- separates product/code changes from docs changes
-- runs the analysis engine with a default confidence threshold of `60`
-- recalls similar change patterns from Novyx
-- learns from merged PRs by comparing predicted docs with actual docs changed
-- stores new mappings and memories in Novyx
-- creates an audit trace in Novyx for every analyzed PR
-- upserts a marker-based PR comment on GitHub only when confidence clears the threshold
-- deletes the marker comment when a rerun drops below the threshold
-- returns the comment body and structured recommendations
-- returns adjacent support and onboarding update drafts when the repo contains those docs
+- recall similar historical change patterns from Novyx
+- learn from merged PRs by comparing predicted docs with actual docs changed
+- store mappings and memories for future ranking improvements
+- create an audit trace in Novyx for every analyzed PR
+- return adjacent support and onboarding update drafts when the repo contains those docs
 
 Reviewer feedback is part of the live loop:
 
@@ -195,6 +233,12 @@ Optional configuration:
 - `GITHUB_API_URL` for GitHub Enterprise or testing
 - `CONFIDENCE_THRESHOLD` to tune when the app comments, default `60`
 
+Reference Node CLI usage:
+
+```bash
+node ./src/cli.js --diff ./test/fixtures/sample.patch --docs ./test/fixtures/repo/docs --code ./test/fixtures/repo/src
+```
+
 Doc ownership rules:
 
 - ownership rules map repository-specific code prefixes to docs prefixes
@@ -204,20 +248,6 @@ Doc ownership rules:
 Reference monitoring plan:
 
 - [MONITORING.md](/Users/blakeheron/Desktop/demo/MONITORING.md)
-
-Example payload:
-
-```json
-{
-  "action": "opened",
-  "repository": { "full_name": "acme/app" },
-  "pull_request": {
-    "number": 42,
-    "title": "Add coupon support to checkout",
-    "patch": "diff --git a/src/example.ts b/src/example.ts\n..."
-  }
-}
-```
 
 ## Roadmap
 
