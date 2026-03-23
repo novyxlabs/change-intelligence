@@ -667,7 +667,15 @@ def rank_documents(
                 match_count = int(item.get("surface_match_count") or 0)
                 match_specificity = int(item.get("surface_match_specificity") or 0)
                 item["score"] = int(item["score"]) + 24 + (match_count * 18) + match_specificity
-                item["confidence"] = min(100, int(item["confidence"]) + 8)
+                confidence_floor = 70
+                if match_count >= 2:
+                    confidence_floor = 92
+                elif match_count == 1:
+                    confidence_floor = 78
+                item["confidence"] = max(
+                    confidence_floor,
+                    min(100, int(item["confidence"]) + 8),
+                )
                 item["evidence"] = item["evidence"] + [
                     "Post-rank boost: exact route/API matches outrank broad historical-pattern matches"
                 ]
