@@ -223,6 +223,7 @@ class ChangeIntelligenceServiceTests(unittest.TestCase):
         self.assertIn("### What Changed", result["payload"]["comment_body"])
         self.assertIn("### Why This Is High Confidence", result["payload"]["comment_body"])
         self.assertIn("### Risk If Ignored", result["payload"]["comment_body"])
+        self.assertIn("### Trust Signals", result["payload"]["comment_body"])
         self.assertIn("Tier: `high-confidence`", result["payload"]["comment_body"])
         self.assertIn("The top doc mentions the changed symbols directly.", result["payload"]["comment_body"])
         self.assertTrue(any("Novyx remembers this exact changed file mapping" in line for line in result["payload"]["recommendations"][0]["evidence"]))
@@ -282,6 +283,7 @@ index 1111111..2222222 100644
         )
 
         self.assertIn("Exact route or API surface matches were found in the top doc.", result["payload"]["comment_body"])
+        self.assertIn("Top doc covers `3` changed API surfaces directly.", result["payload"]["comment_body"])
         self.assertNotIn("### mcp/tools-reference.md", result["payload"]["comment_body"])
 
     def test_process_github_event_autodetects_common_docs_path_when_docs_is_missing(self):

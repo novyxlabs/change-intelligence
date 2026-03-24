@@ -93,6 +93,7 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(payload["metrics"]["confidence_tiers"]["counts"]["review_recommended"], 1)
         self.assertEqual(payload["metrics"]["case_studies"][0]["top_doc"], "billing.md")
         self.assertEqual(payload["metrics"]["side_effects"]["counts"]["token_auth_runs"], 1)
+        self.assertEqual(payload["metrics"]["trust"]["label"], "strong")
         self.assertEqual(payload["auth_mode"], "none")
         self.assertEqual(payload["setup"]["docs_path"], "handbook")
         self.assertEqual(payload["setup"]["checks"][0]["label"], "GitHub auth")
@@ -123,6 +124,7 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("Drift Hotspots", html)
         self.assertIn("Proof Candidates", html)
         self.assertIn("Production Alerts", html)
+        self.assertIn("Trust Summary", html)
         self.assertIn("Setup Status", html)
         self.assertIn("GitHub auth mode: token", html)
         self.assertIn("novyxlabs/novyx-docs", html)
@@ -136,6 +138,7 @@ class DashboardTests(unittest.TestCase):
         html = render_public_proof_html(payload)
         self.assertIn("Change Intelligence Proof", html)
         self.assertIn("Accepted Proof Points", html)
+        self.assertIn("Trust Summary", html)
         self.assertIn("billing.md", html)
 
     def test_server_serves_dashboard_json_and_html(self):

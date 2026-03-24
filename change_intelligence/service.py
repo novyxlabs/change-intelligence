@@ -265,6 +265,34 @@ def summarize_risk_if_ignored(
     return risks[:3]
 
 
+def summarize_trust_signals(
+    recommendations: Sequence[Dict[str, object]],
+    threshold: int,
+) -> List[str]:
+    if not recommendations:
+        return [f"No doc cleared the comment threshold of `{threshold}`."]
+
+    top = recommendations[0]
+    signals: List[str] = []
+    surface_match_count = int(top.get("surface_match_count", 0) or 0)
+    accepted_hits = int(top.get("accepted_hits", 0) or 0)
+    exact_file_hits = int(top.get("exact_file_hits", 0) or 0)
+    rejected_hits = int(top.get("rejected_hits", 0) or 0)
+    confidence = int(top.get("confidence", 0) or 0)
+
+    if surface_match_count > 0:
+        signals.append(f"Top doc covers `{surface_match_count}` changed API surfaces directly.")
+    if accepted_hits > 0 or exact_file_hits > 0:
+        signals.append(
+            f"Repo memory contributed `{accepted_hits}` accepted confirmations and `{exact_file_hits}` exact file-to-doc matches."
+        )
+    if rejected_hits > 0:
+        signals.append(f"Negative memory is present too: `{rejected_hits}` similar rejections were considered.")
+    signals.append(f"Comment cleared the gate at `{confidence}` confidence against a `{threshold}` threshold.")
+    signals.append(f"Only `{len(recommendations)}` doc target{'s' if len(recommendations) != 1 else ''} survived comment pruning.")
+    return signals[:4]
+
+
 def build_comment(
     repository: str,
     pull_request_number: int,
@@ -296,6 +324,11 @@ def build_comment(
 
     lines.extend(["### Risk If Ignored", ""])
     for bullet in summarize_risk_if_ignored(summary, recommendations, support_updates, onboarding_updates):
+        lines.append(f"- {bullet}")
+    lines.append("")
+
+    lines.extend(["### Trust Signals", ""])
+    for bullet in summarize_trust_signals(recommendations, threshold):
         lines.append(f"- {bullet}")
     lines.append("")
 

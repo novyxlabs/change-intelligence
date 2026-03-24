@@ -313,6 +313,7 @@ Public proof and setup surfaces:
 - `/proof` gives a public-facing proof page with accepted examples and headline metrics
 - `/api/proof` returns the same proof data as JSON
 - `/dashboard` now includes setup status, resolved docs source, trust metrics, and hotspot visibility
+- PR comments now include a `Trust Signals` block so reviewers can see why a recommendation cleared the bar
 
 ## Roadmap
 

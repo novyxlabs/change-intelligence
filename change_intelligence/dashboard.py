@@ -217,7 +217,9 @@ def _format_value(value: object) -> str:
 
 def _render_summary_cards(metrics: Dict[str, object]) -> str:
     proof_window = metrics.get("proof_window") if isinstance(metrics.get("proof_window"), dict) else {}
+    trust = metrics.get("trust") if isinstance(metrics.get("trust"), dict) else {}
     cards = [
+        ("Trust score", _format_value(trust.get("score"))),
         ("Top-1 rate", _format_percent(metrics.get("top_1_rate"))),
         ("Comment rate", _format_percent(metrics.get("comment_rate"))),
         ("False-positive rate", _format_percent(metrics.get("false_positive_rate"))),
@@ -369,6 +371,8 @@ def render_dashboard_html(payload: Dict[str, object]) -> str:
     errors = errors if isinstance(errors, list) else []
     novyx = metrics.get("novyx")
     novyx = novyx if isinstance(novyx, dict) else {}
+    trust = metrics.get("trust")
+    trust = trust if isinstance(trust, dict) else {}
     proof_window = metrics.get("proof_window")
     proof_window = proof_window if isinstance(proof_window, dict) else {}
     auth_mode = payload.get("auth_mode")
@@ -412,6 +416,11 @@ def render_dashboard_html(payload: Dict[str, object]) -> str:
     {error_html}
     <div class="cards">{_render_summary_cards(metrics)}</div>
     <div class="grid">
+      <section class="panel">
+        <h2>Trust Summary</h2>
+        <p>{_format_value(trust.get("summary"))}</p>
+        <p class="meta">Trust label: {_format_value(trust.get("label"))}. Score: {_format_value(trust.get("score"))}.</p>
+      </section>
       <section class="panel">
         <h2>Setup Status</h2>
         <ul>{_render_setup_checks(setup)}</ul>
@@ -482,6 +491,8 @@ def render_public_proof_html(payload: Dict[str, object]) -> str:
     metrics = metrics if isinstance(metrics, dict) else {}
     proof_window = payload.get("proof_window")
     proof_window = proof_window if isinstance(proof_window, dict) else {}
+    trust = metrics.get("trust")
+    trust = trust if isinstance(trust, dict) else {}
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -504,11 +515,16 @@ def render_public_proof_html(payload: Dict[str, object]) -> str:
     <p>{escape(str(payload.get("headline") or ""))}</p>
     <p class="meta">Generated at {_format_value(payload.get("generated_at"))}. Public proof view over real analysis runs and accepted examples.</p>
     <div class="cards">
+      <section class="card"><h2>Trust score</h2><p>{_format_value(trust.get("score"))}</p></section>
       <section class="card"><h2>Analysis runs</h2><p>{_format_value(metrics.get("analysis_runs"))}</p></section>
       <section class="card"><h2>Top-1 correctness</h2><p>{_format_percent(metrics.get("top_1_rate"))}</p></section>
       <section class="card"><h2>Comment rate</h2><p>{_format_percent(metrics.get("comment_rate"))}</p></section>
       <section class="card"><h2>Proof progress</h2><p>{_format_value(proof_window.get("analysis_runs"))}/20</p></section>
     </div>
+    <section class="panel">
+      <h2>Trust Summary</h2>
+      <p>{_format_value(trust.get("summary"))}</p>
+    </section>
     <section class="panel">
       <h2>Accepted Proof Points</h2>
       <div class="cards">{_render_public_case_studies(payload.get("case_studies"))}</div>

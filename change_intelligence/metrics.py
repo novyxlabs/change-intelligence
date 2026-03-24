@@ -159,6 +159,25 @@ def summarize_alerts(metrics: Dict[str, object]) -> List[Dict[str, object]]:
     return alerts[:5]
 
 
+def summarize_trust(metrics: Dict[str, object]) -> Dict[str, object]:
+    top_1 = float(metrics.get("top_1_rate", 0.0) or 0.0)
+    comment_rate = float(metrics.get("comment_rate", 0.0) or 0.0)
+    false_positive = float(metrics.get("false_positive_rate", 0.0) or 0.0)
+    tiers = metrics.get("confidence_tiers") if isinstance(metrics.get("confidence_tiers"), dict) else {}
+    high_confidence = float((tiers or {}).get("high_confidence_rate", 0.0) or 0.0)
+    score = max(0.0, min(100.0, (top_1 * 55) + (comment_rate * 15) + ((1 - false_positive) * 20) + (high_confidence * 10)))
+    label = "early"
+    if score >= 80:
+        label = "strong"
+    elif score >= 65:
+        label = "building"
+    return {
+        "score": round(score, 1),
+        "label": label,
+        "summary": f"{label.capitalize()} trust: top-1 {top_1 * 100:.0f}%, false-positive {false_positive * 100:.0f}%, comment rate {comment_rate * 100:.0f}%.",
+    }
+
+
 def metric_delta_label(recent: float, baseline: float) -> str:
     delta = recent - baseline
     if abs(delta) < 0.001:
@@ -435,6 +454,7 @@ def compute_metrics(store: NovyxStore, limit: int = 500) -> dict[str, object]:
     metrics["side_effects"] = summarize_side_effects(runs)
     metrics["trend"] = summarize_trend(feedback, runs)
     metrics["case_studies"] = summarize_case_studies(feedback, runs)
+    metrics["trust"] = summarize_trust(metrics)
     metrics["novyx"] = {
         "eval": {},
         "audit": {},

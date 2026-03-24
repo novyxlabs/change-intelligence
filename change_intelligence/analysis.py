@@ -638,8 +638,14 @@ def score_document(
         "score": score,
         "confidence": confidence,
         "evidence": prioritize_evidence(evidence),
+        "graph_hits": graph_hits,
+        "exact_file_hits": exact_file_hits,
+        "accepted_hits": accepted_hits,
+        "missed_hits": missed_hits,
+        "rejected_hits": rejected_hits,
         "surface_match_count": len(matching_surfaces),
         "surface_match_specificity": sum(surface_specificity(surface) for surface in matching_surfaces),
+        "domain_overlap_count": len(domain_overlap),
     }
 
 
