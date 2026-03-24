@@ -142,6 +142,57 @@ class FeedbackAndMetricsTests(unittest.TestCase):
         self.assertTrue(result["graph_update"]["updated"])
         self.assertEqual(result["audit_entries"][0]["operation"], "CREATE")
 
+    def test_process_feedback_event_uses_installation_id_for_github_app_auth(self):
+        import change_intelligence.feedback as module
+
+        class FakeGitHub:
+            def __init__(self):
+                self.seen_issue_installation_ids = []
+                self.seen_permission_installation_ids = []
+
+            def auth_mode(self):
+                return "app"
+
+            def repository_installation_id(self, owner, repo):
+                return 123
+
+            def issue_comments(self, owner, repo, issue_number, installation_id):
+                self.seen_issue_installation_ids.append(installation_id)
+                return [
+                    {
+                        "html_url": "https://github.com/acme/app/pull/1#issuecomment-1",
+                        "body": "<!-- change-intelligence-comment -->\nReport",
+                        "user": {"login": "change-intelligence-bot"},
+                        "author_association": "NONE",
+                    },
+                    {
+                        "html_url": "https://github.com/acme/app/pull/1#issuecomment-2",
+                        "body": "/ci correct",
+                        "user": {"login": "blake"},
+                        "author_association": "NONE",
+                    },
+                ]
+
+            def user_permission(self, owner, repo, username, installation_id):
+                self.seen_permission_installation_ids.append(installation_id)
+                return "write"
+
+        github = FakeGitHub()
+        store = FakeFeedbackStore()
+        original_from_env = module.GitHubClient.from_env
+        try:
+            module.GitHubClient.from_env = classmethod(lambda cls: github)
+            result = process_feedback_event(
+                '{"repository":{"full_name":"acme/app"},"issue":{"number":1,"pull_request":{"url":"present"}},"comment":{"body":"/ci correct","html_url":"https://github.com/acme/app/pull/1#issuecomment-2","user":{"login":"blake"}}}',
+                store,
+            )
+        finally:
+            module.GitHubClient.from_env = original_from_env
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(github.seen_issue_installation_ids, [123])
+        self.assertEqual(github.seen_permission_installation_ids, [123])
+
     def test_compute_metrics(self):
         store = FakeStore(
             feedback=[

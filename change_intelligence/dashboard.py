@@ -134,20 +134,22 @@ def build_public_proof_payload(store, limit: int = 25) -> dict[str, object]:
         if metrics
         else "No public proof available yet."
     )
+    sanitized_case_studies = [
+        _sanitize_public_case_study(item)
+        for item in case_studies[:3]
+        if isinstance(item, dict)
+    ]
+    sanitized_hotspots = [
+        _sanitize_public_hotspot(item)
+        for item in hotspots[:3]
+        if isinstance(item, dict)
+    ]
     return {
         "generated_at": generated_at,
         "headline": headline,
-        "metrics": metrics,
-        "case_studies": [
-            _sanitize_public_case_study(item)
-            for item in case_studies[:3]
-            if isinstance(item, dict)
-        ],
-        "hotspots": [
-            _sanitize_public_hotspot(item)
-            for item in hotspots[:3]
-            if isinstance(item, dict)
-        ],
+        "metrics": _sanitize_public_metrics(metrics, proof_window, sanitized_hotspots),
+        "case_studies": sanitized_case_studies,
+        "hotspots": sanitized_hotspots,
         "proof_window": proof_window,
         "errors": errors,
     }
@@ -241,6 +243,31 @@ def _sanitize_public_hotspot(hotspot: Dict[str, object]) -> Dict[str, object]:
         "top_doc": hotspot.get("top_doc"),
         "false_positive_rate": hotspot.get("false_positive_rate"),
         "miss_rate": hotspot.get("miss_rate"),
+    }
+
+
+def _sanitize_public_metrics(
+    metrics: Dict[str, object],
+    proof_window: Dict[str, object],
+    hotspots: List[Dict[str, object]],
+) -> Dict[str, object]:
+    confidence_tiers = metrics.get("confidence_tiers")
+    confidence_tiers = confidence_tiers if isinstance(confidence_tiers, dict) else {}
+    trend = metrics.get("trend")
+    trend = trend if isinstance(trend, dict) else {}
+    trust = metrics.get("trust")
+    trust = trust if isinstance(trust, dict) else {}
+    return {
+        "analysis_runs": metrics.get("analysis_runs", 0),
+        "feedback_total": metrics.get("feedback_total", 0),
+        "top_1_rate": metrics.get("top_1_rate", 0.0),
+        "comment_rate": metrics.get("comment_rate", 0.0),
+        "false_positive_rate": metrics.get("false_positive_rate", 0.0),
+        "confidence_tiers": confidence_tiers,
+        "trend": trend,
+        "trust": trust,
+        "proof_window": proof_window,
+        "hotspots": hotspots,
     }
 
 

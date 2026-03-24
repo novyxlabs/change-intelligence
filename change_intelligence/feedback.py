@@ -70,7 +70,11 @@ def is_trusted_feedback(payload: dict[str, object]) -> bool:
     if github is None:
         return False
 
-    comments = github.issue_comments(owner, repo, issue_number, installation_id=None)
+    installation_id = (payload.get("installation") or {}).get("id")
+    if not isinstance(installation_id, int) and getattr(github, "auth_mode", lambda: "none")() == "app":
+        installation_id = github.repository_installation_id(owner, repo)
+
+    comments = github.issue_comments(owner, repo, issue_number, installation_id=installation_id)
     ci_comment_present = any(COMMENT_MARKER in (item.get("body") or "") for item in comments)
     if not ci_comment_present:
         return False
@@ -87,7 +91,7 @@ def is_trusted_feedback(payload: dict[str, object]) -> bool:
     if association in TRUSTED_ASSOCIATIONS:
         return True
 
-    permission = github.user_permission(owner, repo, commenter, installation_id=None)
+    permission = github.user_permission(owner, repo, commenter, installation_id=installation_id)
     return permission in TRUSTED_PERMISSIONS
 
 
