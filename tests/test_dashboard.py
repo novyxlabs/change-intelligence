@@ -6,6 +6,7 @@ from typing import Optional
 
 from change_intelligence.dashboard import (
     build_dashboard_payload,
+    build_setup_status,
     build_public_proof_payload,
     render_dashboard_html,
     render_public_proof_html,
@@ -112,7 +113,21 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(payload["auth_mode"], "none")
         self.assertEqual(payload["setup"]["docs_path"], "handbook")
         self.assertEqual(payload["setup"]["checks"][0]["label"], "GitHub auth")
+        self.assertEqual(payload["setup"]["checks"][2]["status"], "ready")
         self.assertEqual(payload["errors"], [])
+
+    def test_build_dashboard_payload_marks_docs_source_unverified_without_run(self):
+        config = ServiceConfig(
+            docs_root=".",
+            docs_repo="novyxlabs/novyx-docs",
+            docs_path="handbook",
+            novyx_store=FakeStore(),
+        )
+        payload = build_dashboard_payload(FakeStore(), limit=10, service_config=config)
+        payload["setup"] = build_setup_status(config, payload["metrics"], [])
+
+        self.assertEqual(payload["setup"]["checks"][2]["status"], "configured")
+        self.assertIn("not yet verified", payload["setup"]["checks"][2]["detail"])
 
     def test_build_dashboard_payload_surfaces_partial_errors(self):
         payload = build_dashboard_payload(BrokenDashboardStore(), limit=10)
@@ -150,11 +165,16 @@ class DashboardTests(unittest.TestCase):
     def test_public_proof_payload_and_html_include_case_studies(self):
         payload = build_public_proof_payload(FakeStore(), limit=10)
         self.assertEqual(payload["case_studies"][0]["top_doc"], "billing.md")
+        self.assertNotIn("repository", payload["case_studies"][0])
+        self.assertNotIn("changed_file", payload["case_studies"][0])
+        self.assertNotIn("repository", payload["hotspots"][0])
         html = render_public_proof_html(payload)
         self.assertIn("Change Intelligence Proof", html)
         self.assertIn("Accepted Proof Points", html)
         self.assertIn("Trust Summary", html)
         self.assertIn("billing.md", html)
+        self.assertNotIn("novyxlabs/novyx-core", html)
+        self.assertNotIn("createCheckoutSession.ts", html)
 
     def test_server_serves_dashboard_json_and_html(self):
         def invoke(path: str, dashboard_secret: str = "", provided_secret: Optional[str] = None) -> tuple[int, dict[str, str], bytes]:

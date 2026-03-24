@@ -125,6 +125,8 @@ def build_public_proof_payload(store, limit: int = 25) -> dict[str, object]:
     proof_window = proof_window if isinstance(proof_window, dict) else {}
     case_studies = metrics.get("case_studies") if isinstance(metrics, dict) else []
     case_studies = case_studies if isinstance(case_studies, list) else []
+    hotspots = metrics.get("hotspots") if isinstance(metrics, dict) else []
+    hotspots = hotspots if isinstance(hotspots, list) else []
     headline = (
         f"{int(metrics.get('analysis_runs', 0) or 0)} analysis runs, "
         f"{float(metrics.get('top_1_rate', 0.0) or 0.0) * 100:.0f}% top-1 correctness, "
@@ -136,8 +138,16 @@ def build_public_proof_payload(store, limit: int = 25) -> dict[str, object]:
         "generated_at": generated_at,
         "headline": headline,
         "metrics": metrics,
-        "case_studies": case_studies[:3],
-        "hotspots": (metrics.get("hotspots") or [])[:3] if isinstance(metrics, dict) else [],
+        "case_studies": [
+            _sanitize_public_case_study(item)
+            for item in case_studies[:3]
+            if isinstance(item, dict)
+        ],
+        "hotspots": [
+            _sanitize_public_hotspot(item)
+            for item in hotspots[:3]
+            if isinstance(item, dict)
+        ],
         "proof_window": proof_window,
         "errors": errors,
     }
@@ -159,6 +169,17 @@ def build_setup_status(service_config, metrics: Dict[str, object], recent_runs: 
     proof_window = metrics.get("proof_window") if isinstance(metrics, dict) else {}
     proof_window = proof_window if isinstance(proof_window, dict) else {}
 
+    docs_source_status = "waiting"
+    docs_source_detail = "Waiting for the first successful analysis run to verify the docs source."
+    if latest_docs_repo or latest_doc_path:
+        docs_source_status = "ready"
+        docs_source_detail = f"Verified on a recent run using {docs_repo_used or '-'} at `{docs_path_used}`."
+    elif configured_docs_repo or configured_docs_path != "docs":
+        docs_source_status = "configured"
+        docs_source_detail = f"Configured for {docs_repo_used or '-'} at `{docs_path_used}`, but not yet verified by a real run."
+    else:
+        docs_source_detail = "No explicit docs source configured yet. The service will auto-detect a common docs folder on first successful analysis."
+
     checks = [
         {
             "label": "GitHub auth",
@@ -172,8 +193,8 @@ def build_setup_status(service_config, metrics: Dict[str, object], recent_runs: 
         },
         {
             "label": "Docs source",
-            "status": "ready",
-            "detail": f"Using {docs_repo_used or '-'} at `{docs_path_used}`.",
+            "status": docs_source_status,
+            "detail": docs_source_detail,
         },
         {
             "label": "Live traffic",
@@ -200,6 +221,26 @@ def build_setup_status(service_config, metrics: Dict[str, object], recent_runs: 
             "top_doc": latest_top_doc,
         },
         "checks": checks,
+    }
+
+
+def _sanitize_public_case_study(case_study: Dict[str, object]) -> Dict[str, object]:
+    return {
+        "area": case_study.get("area"),
+        "top_doc": case_study.get("top_doc"),
+        "top_confidence": case_study.get("top_confidence"),
+        "confidence_tier": case_study.get("confidence_tier"),
+        "created_at": case_study.get("created_at"),
+    }
+
+
+def _sanitize_public_hotspot(hotspot: Dict[str, object]) -> Dict[str, object]:
+    return {
+        "area": hotspot.get("area"),
+        "runs": hotspot.get("runs"),
+        "top_doc": hotspot.get("top_doc"),
+        "false_positive_rate": hotspot.get("false_positive_rate"),
+        "miss_rate": hotspot.get("miss_rate"),
     }
 
 
@@ -355,8 +396,7 @@ def _render_public_case_studies(case_studies: object) -> str:
             continue
         blocks.append(
             "<article class='card'>"
-            f"<h2>{escape(str(item.get('repository', '-')))} #{escape(str(item.get('pull_request_number', '-')))}</h2>"
-            f"<p><strong>Changed file:</strong> {escape(str(item.get('changed_file') or '-'))}</p>"
+            f"<h2>{escape(str(item.get('area') or 'Accepted proof point'))}</h2>"
             f"<p><strong>Top doc:</strong> {escape(str(item.get('top_doc') or '-'))}</p>"
             f"<p class='meta'>Confidence {_format_value(item.get('top_confidence'))} • Tier {_format_value(item.get('confidence_tier'))}</p>"
             "</article>"
