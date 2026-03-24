@@ -84,6 +84,12 @@ class BrokenDashboardStore(FakeStore):
         return super().list_memories(tags, limit=limit)
 
 
+class NoFeedbackDashboardStore(FakeStore):
+    def __init__(self):
+        super().__init__()
+        self.feedback = []
+
+
 class DashboardTests(unittest.TestCase):
     def test_summarize_trust_handles_sparse_low_confidence_metrics(self):
         trust = summarize_trust(
@@ -177,9 +183,18 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("Change Intelligence Proof", html)
         self.assertIn("Accepted Proof Points", html)
         self.assertIn("Trust Summary", html)
+        self.assertIn("Current State", html)
+        self.assertIn("Verified feedback", html)
         self.assertIn("billing.md", html)
         self.assertNotIn("novyxlabs/novyx-core", html)
         self.assertNotIn("createCheckoutSession.ts", html)
+
+    def test_public_proof_payload_uses_building_headline_without_feedback(self):
+        payload = build_public_proof_payload(NoFeedbackDashboardStore(), limit=10)
+        self.assertIn("feedback window is still building", payload["headline"])
+        html = render_public_proof_html(payload)
+        self.assertIn("The live loop is working and collecting runs", html)
+        self.assertIn("Building", html)
 
     def test_server_serves_dashboard_json_and_html(self):
         def invoke(path: str, dashboard_secret: str = "", provided_secret: Optional[str] = None) -> tuple[int, dict[str, str], bytes]:

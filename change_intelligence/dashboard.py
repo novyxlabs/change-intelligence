@@ -127,13 +127,7 @@ def build_public_proof_payload(store, limit: int = 25) -> dict[str, object]:
     case_studies = case_studies if isinstance(case_studies, list) else []
     hotspots = metrics.get("hotspots") if isinstance(metrics, dict) else []
     hotspots = hotspots if isinstance(hotspots, list) else []
-    headline = (
-        f"{int(metrics.get('analysis_runs', 0) or 0)} analysis runs, "
-        f"{float(metrics.get('top_1_rate', 0.0) or 0.0) * 100:.0f}% top-1 correctness, "
-        f"{float(metrics.get('comment_rate', 0.0) or 0.0) * 100:.0f}% comment rate."
-        if metrics
-        else "No public proof available yet."
-    )
+    headline = _public_headline(metrics, proof_window) if metrics else "No public proof available yet."
     sanitized_case_studies = [
         _sanitize_public_case_study(item)
         for item in case_studies[:3]
@@ -269,6 +263,48 @@ def _sanitize_public_metrics(
         "proof_window": proof_window,
         "hotspots": hotspots,
     }
+
+
+def _public_headline(metrics: Dict[str, object], proof_window: Dict[str, object]) -> str:
+    analysis_runs = int(metrics.get("analysis_runs", 0) or 0)
+    feedback_total = int(metrics.get("feedback_total", 0) or 0)
+    comment_rate = float(metrics.get("comment_rate", 0.0) or 0.0)
+    top_1_rate = float(metrics.get("top_1_rate", 0.0) or 0.0)
+    remaining = int(proof_window.get("remaining_to_minimum", 0) or 0)
+    if feedback_total <= 0:
+        return (
+            f"{analysis_runs} live analysis runs so far. "
+            f"The feedback window is still building; {remaining} more runs to minimum public proof."
+        )
+    return (
+        f"{analysis_runs} analysis runs, "
+        f"{top_1_rate * 100:.0f}% top-1 correctness, "
+        f"{comment_rate * 100:.0f}% comment rate."
+    )
+
+
+def _public_stage_summary(metrics: Dict[str, object], proof_window: Dict[str, object]) -> str:
+    feedback_total = int(metrics.get("feedback_total", 0) or 0)
+    analysis_runs = int(metrics.get("analysis_runs", 0) or 0)
+    remaining = int(proof_window.get("remaining_to_minimum", 0) or 0)
+    if analysis_runs <= 0:
+        return "The service is deployed, but no live analysis runs have been recorded yet."
+    if feedback_total <= 0:
+        return (
+            "The live loop is working and collecting runs, but reviewer-verified proof is still sparse. "
+            f"Need {remaining} more runs before the public proof window has enough weight."
+        )
+    return "The product has enough real reviewer feedback to start showing earned trust, not just activity."
+
+
+def _public_accepted_proof_copy(case_studies: object, proof_window: Dict[str, object]) -> str:
+    if isinstance(case_studies, list) and case_studies:
+        return ""
+    remaining = int(proof_window.get("remaining_to_minimum", 0) or 0)
+    return (
+        "No accepted proof points yet. That does not mean the system is failing; it means the reviewer-confirmed window is still sparse. "
+        f"{remaining} more runs to the minimum proof target."
+    )
 
 
 def _format_percent(value: object) -> str:
@@ -560,6 +596,7 @@ def render_public_proof_html(payload: Dict[str, object]) -> str:
     proof_window = proof_window if isinstance(proof_window, dict) else {}
     trust = metrics.get("trust")
     trust = trust if isinstance(trust, dict) else {}
+    feedback_total = int(metrics.get("feedback_total", 0) or 0)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -584,16 +621,22 @@ def render_public_proof_html(payload: Dict[str, object]) -> str:
     <div class="cards">
       <section class="card"><h2>Trust score</h2><p>{_format_value(trust.get("score"))}</p></section>
       <section class="card"><h2>Analysis runs</h2><p>{_format_value(metrics.get("analysis_runs"))}</p></section>
-      <section class="card"><h2>Top-1 correctness</h2><p>{_format_percent(metrics.get("top_1_rate"))}</p></section>
+      <section class="card"><h2>Verified feedback</h2><p>{_format_value(feedback_total)}</p></section>
+      <section class="card"><h2>Top-1 correctness</h2><p>{_format_percent(metrics.get("top_1_rate")) if feedback_total else "Building"}</p></section>
       <section class="card"><h2>Comment rate</h2><p>{_format_percent(metrics.get("comment_rate"))}</p></section>
       <section class="card"><h2>Proof progress</h2><p>{_format_value(proof_window.get("analysis_runs"))}/20</p></section>
     </div>
+    <section class="panel">
+      <h2>Current State</h2>
+      <p>{escape(_public_stage_summary(metrics, proof_window))}</p>
+    </section>
     <section class="panel">
       <h2>Trust Summary</h2>
       <p>{_format_value(trust.get("summary"))}</p>
     </section>
     <section class="panel">
       <h2>Accepted Proof Points</h2>
+      <p class="meta">{escape(_public_accepted_proof_copy(payload.get("case_studies"), proof_window))}</p>
       <div class="cards">{_render_public_case_studies(payload.get("case_studies"))}</div>
     </section>
   </main>

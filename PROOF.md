@@ -2,6 +2,9 @@
 
 This project should earn belief with concrete examples, not category words.
 
+The live public proof surface is `/proof` on the deployed service.
+It is intentionally conservative right now: the runtime loop is live, the public payload is sanitized, and the reviewer-verified proof window is still building.
+
 Below are three small but believable examples from the repo's own fixtures and live integration work.
 
 ## 1. Billing Change -> Billing Doc

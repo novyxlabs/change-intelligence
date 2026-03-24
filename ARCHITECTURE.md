@@ -22,10 +22,11 @@ The Node code under `src/` is kept only as a reference CLI for the original rank
 
 ## Design Choices
 
-- No external dependencies: easier to audit, easier to run in CI, no install friction
+- Small dependency surface: Python stdlib first, with `requests`, `PyJWT`, and `novyx` only where the product needs networked GitHub and memory integrations
 - Deterministic scoring: useful before introducing any LLM layer
 - Evidence-first output: every recommendation should cite a concrete reason
 - Repository-specific ownership rules can bias ranking without changing the webhook contract
+- Public proof is allowlisted and sanitized separately from the internal dashboard so public metrics do not leak repository internals
 
 ## Extension Points
 

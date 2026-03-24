@@ -8,6 +8,7 @@ Usually nobody notices until users do.
 
 Want the concrete evidence first:
 - [PROOF.md](./PROOF.md)
+- live proof surface: `/proof` on the deployed service
 
 The Python service under `change_intelligence/` is the only production runtime.
 The earlier Node implementation in `src/` remains as a reference CLI and fixture harness for the ranking logic, not as a deployed server.
@@ -312,7 +313,9 @@ Public proof and setup surfaces:
 
 - `/proof` gives a public-facing proof page with accepted examples and headline metrics
 - `/api/proof` returns the same proof data as JSON
+- both public proof surfaces are intentionally sanitized and do not expose repository names, PR numbers, changed file paths, or internal Novyx/audit payloads
 - `/dashboard` now includes setup status, resolved docs source, trust metrics, and hotspot visibility
+- `/dashboard` and `/api/dashboard` stay private behind `DASHBOARD_SECRET`
 - PR comments now include a `Trust Signals` block so reviewers can see why a recommendation cleared the bar
 
 ## Roadmap
