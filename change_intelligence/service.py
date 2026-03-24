@@ -9,6 +9,7 @@ import requests
 from typing import Dict, List, Optional, Sequence, Set
 
 from .analysis import analyze_patch, render_markdown
+from .feedback import process_feedback_event
 from .github_client import GitHubClient, build_patch_from_files
 from .novyx_store import NovyxStore
 
@@ -644,6 +645,16 @@ def process_github_event(raw_body: str, signature: Optional[str], config: Servic
         return {"status_code": 401, "payload": {"error": "Invalid signature"}}
 
     payload = json.loads(raw_body)
+    if (payload.get("issue") or {}).get("pull_request") and payload.get("comment"):
+        if config.novyx_store is None:
+            return {"status_code": 200, "payload": {"ok": False, "ignored": True, "reason": "feedback-store-unavailable"}}
+        feedback_payload = process_feedback_event(
+            raw_body,
+            config.novyx_store,
+            github_client=config.github_client,
+        )
+        return {"status_code": 200, "payload": feedback_payload}
+
     context = collect_event_context(payload, config)
 
     if not context.patch:

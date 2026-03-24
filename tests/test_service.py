@@ -68,6 +68,14 @@ class FakeNovyxStore:
             "audit_entries": [{"operation": "CREATE", "artifact_id": "mem_run_1"}],
         }
 
+    def record_feedback(self, **kwargs):
+        self.calls.append(("feedback", kwargs))
+        return {
+            "feedback": kwargs["command"].replace("/ci ", ""),
+            "graph_update": {"updated": True, "predicate": "documents"},
+            "audit_entries": [{"operation": "CREATE", "artifact_id": "mem_feedback_1"}],
+        }
+
 
 class FakeGitHubClient:
     def __init__(self, patch: str):
@@ -122,6 +130,25 @@ class FakeGitHubClient:
 
     def auth_mode(self):
         return "app"
+
+    def issue_comments(self, owner, repo, issue_number, installation_id):
+        return [
+            {
+                "html_url": f"https://github.com/{owner}/{repo}/pull/{issue_number}#issuecomment-1",
+                "body": f"{COMMENT_MARKER}\nReport",
+                "user": {"login": "change-intelligence-bot"},
+                "author_association": "NONE",
+            },
+            {
+                "html_url": f"https://github.com/{owner}/{repo}/pull/{issue_number}#issuecomment-2",
+                "body": "/ci correct",
+                "user": {"login": "blake"},
+                "author_association": "OWNER",
+            },
+        ]
+
+    def user_permission(self, owner, repo, username, installation_id):
+        return "admin"
 
 
 class BrokenGitHubClient(FakeGitHubClient):
@@ -687,6 +714,62 @@ index 1111111..2222222 100644
         self.assertIn("API or route behavior changed:", result["payload"]["comment_body"])
         self.assertIn("Exact route or API surface matches were found in the top doc.", result["payload"]["comment_body"])
         self.assertIn("`search-reference.md` is likely now misleading", result["payload"]["comment_body"])
+
+    def test_process_github_event_captures_issue_comment_feedback_inline(self):
+        body = json.dumps(
+            {
+                "repository": {"full_name": "acme/app"},
+                "installation": {"id": 123},
+                "issue": {"number": 42, "pull_request": {"url": "present"}},
+                "comment": {
+                    "body": "/ci correct",
+                    "html_url": "https://github.com/acme/app/pull/42#issuecomment-2",
+                    "user": {"login": "blake"},
+                },
+            }
+        )
+        store = FakeNovyxStore()
+        result = process_github_event(
+            body,
+            None,
+            ServiceConfig(
+                docs_root=FIXTURES / "repo" / "docs",
+                novyx_store=store,
+                github_client=FakeGitHubClient(""),
+            ),
+        )
+
+        self.assertEqual(result["status_code"], 200)
+        self.assertTrue(result["payload"]["ok"])
+        self.assertEqual(result["payload"]["feedback"], "correct")
+        feedback_call = next(call for call in store.calls if call[0] == "feedback")
+        self.assertEqual(feedback_call[1]["pull_request_number"], 42)
+        self.assertEqual(feedback_call[1]["commenter"], "blake")
+
+    def test_process_github_event_ignores_issue_comment_feedback_without_store(self):
+        body = json.dumps(
+            {
+                "repository": {"full_name": "acme/app"},
+                "issue": {"number": 42, "pull_request": {"url": "present"}},
+                "comment": {
+                    "body": "/ci correct",
+                    "html_url": "https://github.com/acme/app/pull/42#issuecomment-2",
+                    "user": {"login": "blake"},
+                },
+            }
+        )
+        result = process_github_event(
+            body,
+            None,
+            ServiceConfig(
+                docs_root=FIXTURES / "repo" / "docs",
+                github_client=FakeGitHubClient(""),
+            ),
+        )
+
+        self.assertEqual(result["status_code"], 200)
+        self.assertTrue(result["payload"]["ignored"])
+        self.assertEqual(result["payload"]["reason"], "feedback-store-unavailable")
 
 
 if __name__ == "__main__":

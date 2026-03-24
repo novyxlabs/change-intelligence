@@ -21,7 +21,11 @@ def parse_feedback_command(body: str) -> Optional[str]:
     return None
 
 
-def process_feedback_event(raw_body: str, store: NovyxStore) -> dict[str, object]:
+def process_feedback_event(
+    raw_body: str,
+    store: NovyxStore,
+    github_client: Optional[GitHubClient] = None,
+) -> dict[str, object]:
     payload = json.loads(raw_body)
     repository = (payload.get("repository") or {}).get("full_name") or "unknown/repo"
     issue = payload.get("issue") or {}
@@ -32,7 +36,7 @@ def process_feedback_event(raw_body: str, store: NovyxStore) -> dict[str, object
         return {"ok": False, "ignored": True, "reason": "not-a-pull-request-comment"}
     if not command:
         return {"ok": False, "ignored": True, "reason": "no-feedback-command"}
-    if not is_trusted_feedback(payload):
+    if not is_trusted_feedback(payload, github_client=github_client):
         return {"ok": False, "ignored": True, "reason": "untrusted-feedback"}
 
     result = store.record_feedback(
@@ -53,7 +57,10 @@ def process_feedback_event(raw_body: str, store: NovyxStore) -> dict[str, object
     }
 
 
-def is_trusted_feedback(payload: dict[str, object]) -> bool:
+def is_trusted_feedback(
+    payload: dict[str, object],
+    github_client: Optional[GitHubClient] = None,
+) -> bool:
     repository = (payload.get("repository") or {}).get("full_name") or ""
     if "/" not in repository:
         return False
@@ -66,7 +73,7 @@ def is_trusted_feedback(payload: dict[str, object]) -> bool:
     if not issue_number or not comment_url or not commenter:
         return False
 
-    github = GitHubClient.from_env()
+    github = github_client or GitHubClient.from_env()
     if github is None:
         return False
 
