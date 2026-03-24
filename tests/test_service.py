@@ -329,6 +329,70 @@ index 1111111..2222222 100644
         self.assertEqual(result["payload"]["docs_path"], "handbook")
         self.assertEqual(result["payload"]["recommendations"][0]["relative_path"], "billing.md")
 
+    def test_autodetected_docs_path_normalizes_changed_docs_from_detected_folder(self):
+        patch = (FIXTURES / "sample.patch").read_text(encoding="utf8")
+        body = json.dumps(
+            {
+                "action": "closed",
+                "repository": {"full_name": "acme/app"},
+                "pull_request": {
+                    "number": 42,
+                    "merged_at": "2026-03-17T00:00:00Z",
+                    "head": {"sha": "abc123"},
+                },
+            }
+        )
+        store = FakeNovyxStore()
+
+        class AutoDetectChangedDocsGitHubClient(FakeGitHubClient):
+            def repo_docs(self, owner, repo, docs_path, ref, installation_id):
+                self.docs_requests.append((owner, repo, docs_path, ref, installation_id))
+                if docs_path == "docs":
+                    response = requests.Response()
+                    response.status_code = 404
+                    raise requests.HTTPError(response=response)
+                return [
+                    {
+                        "path": "handbook/billing.md",
+                        "relative_path": "billing.md",
+                        "content": "# Billing Guide\n\n## createCheckoutSession\n\nUse `createCheckoutSession` to start checkout.",
+                    }
+                ]
+
+            def discover_docs_path(self, owner, repo, installation_id, ref, preferred=None):
+                return "handbook"
+
+            def pull_request_files(self, owner, repo, pull_number, installation_id):
+                self.file_requests.append((owner, repo, pull_number, installation_id))
+                return [
+                    {
+                        "filename": "src/billing/createCheckoutSession.ts",
+                        "patch": "\n".join(self.patch.splitlines()[4:]),
+                    },
+                    {
+                        "filename": "handbook/billing.md",
+                        "patch": "@@ -1,2 +1,3 @@\n # Billing Guide\n+\n+Updated coupon support.",
+                    },
+                ]
+
+        github_client = AutoDetectChangedDocsGitHubClient(patch)
+        result = process_github_event(
+            body,
+            None,
+            ServiceConfig(
+                docs_root=FIXTURES / "repo" / "docs",
+                github_client=github_client,
+                novyx_store=store,
+                confidence_threshold=60,
+            ),
+        )
+
+        self.assertEqual(result["status_code"], 200)
+        self.assertEqual(result["payload"]["docs_path"], "handbook")
+        self.assertEqual(result["payload"]["learning_feedback"]["accepted"], ["billing.md"])
+        learn_call = next(call for call in store.calls if call[0] == "learn")
+        self.assertEqual(learn_call[5], ["billing.md"])
+
     def test_process_github_event_stays_silent_below_threshold(self):
         patch = (FIXTURES / "sample.patch").read_text(encoding="utf8")
         body = json.dumps(

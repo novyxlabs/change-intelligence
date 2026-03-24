@@ -10,6 +10,7 @@ from change_intelligence.dashboard import (
     render_dashboard_html,
     render_public_proof_html,
 )
+from change_intelligence.metrics import summarize_trust
 from change_intelligence.server import AppHandler
 from change_intelligence.service import ServiceConfig
 from change_intelligence.github_client import GitHubClient, GitHubConfig
@@ -83,6 +84,20 @@ class BrokenDashboardStore(FakeStore):
 
 
 class DashboardTests(unittest.TestCase):
+    def test_summarize_trust_handles_sparse_low_confidence_metrics(self):
+        trust = summarize_trust(
+            {
+                "top_1_rate": 0.0,
+                "comment_rate": 0.2,
+                "false_positive_rate": 0.5,
+                "confidence_tiers": {"high_confidence_rate": 0.0},
+            }
+        )
+
+        self.assertEqual(trust["label"], "early")
+        self.assertLess(trust["score"], 40)
+        self.assertIn("top-1 0%", trust["summary"])
+
     def test_build_dashboard_payload_normalizes_recent_items(self):
         payload = build_dashboard_payload(FakeStore(), limit=10)
         self.assertEqual(payload["metrics"]["analysis_runs"], 1)
