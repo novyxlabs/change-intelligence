@@ -161,6 +161,7 @@ def apply_learning_feedback(
             "rejected_hits": int(value.get("rejected_hits", 0)),
             "missed_hits": int(value.get("missed_hits", 0)),
             "exact_file_hits": int(value.get("exact_file_hits", 0)),
+            "exact_rejected_file_hits": int(value.get("exact_rejected_file_hits", 0)),
         }
         for key, value in learned_signals.items()
     }
@@ -645,6 +646,8 @@ def process_github_event(raw_body: str, signature: Optional[str], config: Servic
         return {"status_code": 401, "payload": {"error": "Invalid signature"}}
 
     payload = json.loads(raw_body)
+    if not payload.get("pull_request") and not (payload.get("issue") or {}).get("pull_request"):
+        return {"status_code": 200, "payload": {"ok": True, "ignored": True, "reason": "unsupported-event"}}
     if (payload.get("issue") or {}).get("pull_request") and payload.get("comment"):
         if config.novyx_store is None:
             return {"status_code": 200, "payload": {"ok": False, "ignored": True, "reason": "feedback-store-unavailable"}}

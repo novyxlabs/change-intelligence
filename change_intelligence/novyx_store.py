@@ -90,6 +90,7 @@ class NovyxStore:
                     "rejected_hits": 0,
                     "missed_hits": 0,
                     "exact_file_hits": 0,
+                    "exact_rejected_file_hits": 0,
                 },
             )
             tags = set(memory.get("tags") or [])
@@ -101,7 +102,10 @@ class NovyxStore:
                 bucket["missed_hits"] += 1
             observation = str(memory.get("observation") or "")
             if any(path in observation for path in changed_files):
-                bucket["exact_file_hits"] += 1
+                if "rejected" in tags:
+                    bucket["exact_rejected_file_hits"] += 1
+                elif "accepted" in tags or "missed" in tags:
+                    bucket["exact_file_hits"] += 1
 
         return signals
 
@@ -129,6 +133,7 @@ class NovyxStore:
                     "rejected_hits": 0,
                     "missed_hits": 0,
                     "exact_file_hits": 0,
+                    "exact_rejected_file_hits": 0,
                 },
             )
             bucket[key] += 1
@@ -339,9 +344,11 @@ class NovyxStore:
         command: str,
         commenter: str,
         comment_url: str,
+        conflict_strategy: Optional[str] = None,
     ) -> Dict[str, object]:
         label = command.replace("/ci ", "").strip()
         latest = self.latest_analysis_for_pr(repository, pull_request_number)
+        rate_limited = False
 
         try:
             memory = self._remember(
@@ -349,6 +356,7 @@ class NovyxStore:
                 importance=8,
                 tags=["ci-feedback", label],
                 context=f"{repository}#{pull_request_number}",
+                conflict_strategy=conflict_strategy,
                 metadata={
                     "repository": repository,
                     "pull_request_number": pull_request_number,
@@ -361,22 +369,33 @@ class NovyxStore:
         except NovyxError as error:
             if "409" in str(error):
                 memory = {}
+            elif self._is_rate_limited_error(error):
+                memory = {}
+                rate_limited = True
             else:
                 raise
 
-        graph_update = self._apply_feedback_graph_edges(
-            repository,
-            pull_request_number,
-            label,
-            latest,
-        )
+        try:
+            graph_update = self._apply_feedback_graph_edges(
+                repository,
+                pull_request_number,
+                label,
+                latest,
+            )
+        except NovyxError as error:
+            if self._is_rate_limited_error(error):
+                graph_update = {"updated": False, "reason": "write-rate-limited"}
+                rate_limited = True
+            else:
+                raise
         audit = self._audit_snapshot(self._artifact_id(memory), limit=6)
         return {
-            "status": "recorded",
+            "status": "deferred" if rate_limited else "recorded",
             "feedback": label,
             "memory": memory,
             "graph_update": graph_update,
             "audit_entries": audit,
+            "rate_limited": rate_limited,
         }
 
     def _remember_run_outcome(
@@ -434,6 +453,76 @@ class NovyxStore:
                     "novyx_record_status": novyx_effect.get("status"),
                     "novyx_record_error": novyx_effect.get("error"),
                 },
+            )
+        except NovyxError as error:
+            if "409" not in str(error):
+                raise
+        return {}
+
+    def record_historical_analysis(
+        self,
+        repository: str,
+        pull_request_number: int,
+        *,
+        changed_files: Sequence[str],
+        top_doc: Optional[str],
+        top_confidence: Optional[int],
+        confidence_tier: str,
+        comment_url: str,
+        comment_created_at: Optional[str] = None,
+        restore_metadata: bool = False,
+        original_observation: Optional[str] = None,
+    ) -> Dict[str, object]:
+        tags = [
+            "analysis-run",
+            confidence_tier or "review-recommended",
+            "commented",
+            "historical-import",
+            *(["metadata-restored"] if restore_metadata else []),
+        ]
+        parts = [
+            (
+                f"Historical analysis metadata restored for {repository}#{pull_request_number}"
+                if restore_metadata
+                else f"Historical analysis run imported for {repository}#{pull_request_number}"
+            ),
+            f"from {comment_url}",
+            f"tier {confidence_tier or 'review-recommended'}",
+        ]
+        if top_doc:
+            parts.append(f"top doc {top_doc}")
+        if top_confidence is not None:
+            parts.append(f"confidence {top_confidence}")
+        if changed_files:
+            parts.append(f"changed files {', '.join(changed_files[:5])}")
+        if comment_created_at:
+            parts.append(f"commented at {comment_created_at}")
+        metadata: Dict[str, object] = {
+            "repository": repository,
+            "pull_request_number": pull_request_number,
+            "confidence_tier": confidence_tier or "review-recommended",
+            "comment_suppressed": False,
+            "changed_files": list(changed_files),
+            "top_doc": top_doc,
+            "top_confidence": top_confidence,
+            "recommendation_count": 1 if top_doc else 0,
+            "github_comment_status": "commented",
+            "github_comment_url": comment_url,
+            "novyx_record_status": "historical-import",
+            "source": "github-comment-backfill",
+            "metadata_restored": restore_metadata,
+        }
+        if comment_created_at:
+            metadata["github_comment_created_at"] = comment_created_at
+        observation = original_observation or " | ".join(parts)
+        try:
+            return self._remember(
+                observation,
+                importance=5,
+                tags=tags,
+                context=f"{repository}#{pull_request_number}",
+                conflict_strategy="lww",
+                metadata=metadata,
             )
         except NovyxError as error:
             if "409" not in str(error):
@@ -735,8 +824,12 @@ class NovyxStore:
         try:
             self.client.triple(subject, predicate, object_name, metadata=metadata)
         except NovyxError as error:
-            if "409" not in str(error):
+            if "409" not in str(error) and not self._is_rate_limited_error(error):
                 raise
+
+    def _is_rate_limited_error(self, error: Exception) -> bool:
+        message = str(error).lower()
+        return "write_rate_limit" in message or "rate limit" in message
 
     def _triple_items(self, triples: Dict[str, object]) -> List[Dict[str, object]]:
         if isinstance(triples, dict):

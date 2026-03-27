@@ -49,6 +49,33 @@ class MemoryRankingTests(unittest.TestCase):
             any("Novyx remembers this exact changed file mapping" in line for line in result["recommendations"][0]["evidence"])
         )
 
+    def test_exact_rejected_file_memory_suppresses_repeat_false_positive(self):
+        result = analyze_patch(
+            PATCH,
+            docs=DOCS,
+            learned_signals={
+                "billing.md": {
+                    "graph_hits": 0,
+                    "accepted_hits": 0,
+                    "rejected_hits": 1,
+                    "missed_hits": 0,
+                    "exact_file_hits": 0,
+                    "exact_rejected_file_hits": 2,
+                },
+                "api.md": {
+                    "graph_hits": 0,
+                    "accepted_hits": 0,
+                    "rejected_hits": 0,
+                    "missed_hits": 0,
+                    "exact_file_hits": 0,
+                    "exact_rejected_file_hits": 0,
+                },
+            },
+        )
+
+        self.assertNotIn("billing.md", [item["relative_path"] for item in result["recommendations"]])
+        self.assertEqual(result["recommendations"][0]["relative_path"], "api.md")
+
 
 if __name__ == "__main__":
     unittest.main()

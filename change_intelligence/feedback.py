@@ -6,6 +6,7 @@ from typing import Optional
 
 from .github_client import COMMENT_MARKER, GitHubClient
 from .novyx_store import NovyxStore
+from novyx import NovyxError
 
 
 VALID_COMMANDS = {"/ci correct", "/ci wrong-doc", "/ci missed-doc"}
@@ -39,21 +40,38 @@ def process_feedback_event(
     if not is_trusted_feedback(payload, github_client=github_client):
         return {"ok": False, "ignored": True, "reason": "untrusted-feedback"}
 
-    result = store.record_feedback(
-        repository=repository,
-        pull_request_number=int(issue.get("number") or 0),
-        command=command,
-        commenter=((comment.get("user") or {}).get("login") or "unknown"),
-        comment_url=comment.get("html_url") or "",
-    )
+    try:
+        result = store.record_feedback(
+            repository=repository,
+            pull_request_number=int(issue.get("number") or 0),
+            command=command,
+            commenter=((comment.get("user") or {}).get("login") or "unknown"),
+            comment_url=comment.get("html_url") or "",
+        )
+    except NovyxError as error:
+        if "write_rate_limit" not in str(error).lower() and "rate limit" not in str(error).lower():
+            raise
+        return {
+            "ok": True,
+            "deferred": True,
+            "reason": "write-rate-limited",
+            "repository": repository,
+            "pull_request_number": int(issue.get("number") or 0),
+            "feedback": command.replace("/ci ", ""),
+            "comment_url": comment.get("html_url"),
+            "graph_update": {"updated": False, "reason": "write-rate-limited"},
+            "audit_entries": [],
+        }
     return {
         "ok": True,
+        "deferred": bool(result.get("rate_limited")),
         "repository": repository,
         "pull_request_number": int(issue.get("number") or 0),
         "feedback": result["feedback"],
         "comment_url": comment.get("html_url"),
         "graph_update": result.get("graph_update"),
         "audit_entries": result.get("audit_entries"),
+        **({"reason": "write-rate-limited"} if result.get("rate_limited") else {}),
     }
 
 

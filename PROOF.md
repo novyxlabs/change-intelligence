@@ -3,7 +3,10 @@
 This project should earn belief with concrete examples, not category words.
 
 The live public proof surface is `/proof` on the deployed service.
-It is intentionally conservative right now: the runtime loop is live, the public payload is sanitized, and the reviewer-verified proof window is still building.
+It is intentionally conservative right now: the runtime loop is live, the public payload is sanitized, the 20-run proof window is complete, and top-line performance claims stay hidden until the reviewer-feedback minimum is also met.
+
+The standard is not "does it say something intelligent."
+The standard is "does it say something defensible, and does it stay quiet when it cannot."
 
 Below are three small but believable examples from the repo's own fixtures and live integration work.
 
@@ -91,9 +94,25 @@ Relevant fix:
 - [`change_intelligence/service.py`](./change_intelligence/service.py)
 - [`tests/test_service.py`](./tests/test_service.py)
 
+## 4. Live Anti-Noise Validation
+
+What happened:
+
+- the early live evaluation window exposed a real failure mode: broad false positives like `index.md`, `changelog.md`, and unrelated SDK docs
+- the scorer was tightened with better route extraction, weak-overlap suppression, CamelCase tokenization, and an explicit error-doc prior
+- the deployed service was then re-verified on a live validation PR
+- the refreshed GitHub comment ranked `errors.md` first for the `Errors.tsx` change instead of broad catch-all docs
+
+Why this matters:
+
+- it proves the system is learning from failure, not hiding it
+- it shows the product is optimizing for trust, not comment volume
+- this is the real reason the positioning is "PR intelligence that knows when to stay silent"
+
 ## What These Examples Show
 
 - the narrow wedge works: code change -> likely stale docs
 - route and API surfaces make the ranking better
 - adjacent audiences matter: support and onboarding drift are real
 - Novyx Core Memory makes sense here because repo-specific memory can reinforce correct predictions over time
+- the product gets stronger when deterministic suppression beats shallow lexical overlap

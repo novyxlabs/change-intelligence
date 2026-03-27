@@ -6,6 +6,7 @@ from change_intelligence.metrics import (
     render_case_studies_markdown,
     render_founder_digest_markdown,
 )
+from novyx import NovyxError
 
 
 class FakeStore:
@@ -59,6 +60,11 @@ class FakeFeedbackStore:
             "graph_update": {"updated": True, "predicate": "documents"},
             "audit_entries": [{"operation": "CREATE", "artifact_id": "mem_1"}],
         }
+
+
+class RateLimitedFeedbackStore(FakeFeedbackStore):
+    def record_feedback(self, **kwargs):
+        raise NovyxError("novyx_ram.v1.write_rate_limit.exceeded")
 
 
 class FeedbackAndMetricsTests(unittest.TestCase):
@@ -193,6 +199,43 @@ class FeedbackAndMetricsTests(unittest.TestCase):
         self.assertEqual(github.seen_issue_installation_ids, [123])
         self.assertEqual(github.seen_permission_installation_ids, [123])
 
+    def test_process_feedback_event_treats_rate_limited_feedback_as_deferred(self):
+        import change_intelligence.feedback as module
+
+        class FakeGitHub:
+            def issue_comments(self, owner, repo, issue_number, installation_id):
+                return [
+                    {
+                        "html_url": "https://github.com/acme/app/pull/1#issuecomment-1",
+                        "body": "<!-- change-intelligence-comment -->\nReport",
+                        "user": {"login": "change-intelligence-bot"},
+                        "author_association": "NONE",
+                    },
+                    {
+                        "html_url": "https://github.com/acme/app/pull/1#issuecomment-2",
+                        "body": "/ci correct",
+                        "user": {"login": "blake"},
+                        "author_association": "OWNER",
+                    },
+                ]
+
+            def user_permission(self, owner, repo, username, installation_id):
+                return "admin"
+
+        original_from_env = module.GitHubClient.from_env
+        try:
+            module.GitHubClient.from_env = classmethod(lambda cls: FakeGitHub())
+            result = process_feedback_event(
+                '{"repository":{"full_name":"acme/app"},"issue":{"number":1,"pull_request":{"url":"present"}},"comment":{"body":"/ci correct","html_url":"https://github.com/acme/app/pull/1#issuecomment-2","user":{"login":"blake"}}}',
+                RateLimitedFeedbackStore(),
+            )
+        finally:
+            module.GitHubClient.from_env = original_from_env
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["deferred"])
+        self.assertEqual(result["reason"], "write-rate-limited")
+
     def test_compute_metrics(self):
         store = FakeStore(
             feedback=[
@@ -279,6 +322,48 @@ class FeedbackAndMetricsTests(unittest.TestCase):
         self.assertEqual(metrics["novyx"]["audit"]["entry_count"], 1)
         self.assertEqual(metrics["novyx"]["eval"]["history_count"], 1)
         self.assertEqual(metrics["novyx"]["eval"]["drift"]["drift_score"], 0.03)
+
+    def test_compute_metrics_excludes_restored_backfill_runs_from_hotspots(self):
+        store = FakeStore(
+            feedback=[
+                {"tags": ["ci-feedback", "correct"], "context": "novyxlabs/novyx-core#1", "created_at": "2026-03-18T11:00:00Z"},
+            ],
+            runs=[
+                {
+                    "tags": ["analysis-run", "review-recommended", "commented"],
+                    "context": "novyxlabs/novyx-core#1",
+                    "created_at": "2026-03-18T11:00:00Z",
+                    "metadata": {
+                        "repository": "novyxlabs/novyx-core",
+                        "pull_request_number": 1,
+                        "changed_files": ["src/billing/createCheckoutSession.ts"],
+                        "top_doc": "billing.md",
+                        "top_confidence": 84,
+                        "confidence_tier": "review-recommended",
+                    },
+                },
+                {
+                    "tags": ["analysis-run", "high-confidence", "commented", "historical-import"],
+                    "context": "novyxlabs/novyx-site#6",
+                    "created_at": "2026-03-25T13:03:28Z",
+                    "metadata": {
+                        "repository": "novyxlabs/novyx-site",
+                        "pull_request_number": 6,
+                        "changed_files": ["src/pages/Errors.tsx"],
+                        "top_doc": "changelog.md",
+                        "top_confidence": 100,
+                        "confidence_tier": "high-confidence",
+                        "metadata_restored": True,
+                        "source": "github-comment-backfill",
+                    },
+                },
+            ],
+        )
+        metrics = compute_metrics(store)
+
+        self.assertEqual(len(metrics["hotspots"]), 1)
+        self.assertEqual(metrics["hotspots"][0]["area"], "src/billing")
+        self.assertEqual(metrics["hotspots"][0]["top_doc"], "billing.md")
 
     def test_render_case_studies_markdown(self):
         markdown = render_case_studies_markdown(

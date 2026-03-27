@@ -6,6 +6,9 @@ Usually nobody notices until users do.
 
 `change-intelligence` exists to catch that in the pull request.
 
+The right framing is not "AI docs assistant."
+It is an auditable PR intelligence system that knows when to stay silent.
+
 Want the concrete evidence first:
 - [PROOF.md](./PROOF.md)
 - live proof surface: `/proof` on the deployed service
@@ -31,6 +34,7 @@ This reads the diff, finds the likely blast radius, and shows the evidence.
 
 This is not a generic docs chatbot.
 This is not "AI for content."
+This is not a noisy PR wrapper that comments on everything.
 
 This is one narrow product:
 
@@ -38,6 +42,7 @@ This is one narrow product:
 - docs drift appears immediately
 - the system points at the likely stale docs
 - the reviewer sees why
+- the system stays silent when the evidence is weak
 
 That is enough to be useful by itself.
 It is also the right primitive for release notes, support updates, onboarding drift, and memory-backed learning later.
@@ -96,6 +101,9 @@ Novyx Core Memory is here because over time the system should remember:
 
 That turns it from a stateless checker into a repo-specific system that gets sharper over time.
 
+The important point is governance, not decoration.
+Novyx gives the system memory, feedback storage, traces, and proof export so each recommendation can be inspected, challenged, and improved instead of hand-waved away as "the model thought so."
+
 ## Who This Is For
 
 - teams with product or API docs living near the code
@@ -114,6 +122,17 @@ That turns it from a stateless checker into a repo-specific system that gets sha
 - Generates adjacent support-knowledge and onboarding/tour update drafts when the repo has those audience-specific docs
 - Stores patterns, triples, and audit traces in Novyx so the system gets smarter over time
 - Emits the same result as JSON for GitHub webhook integration
+
+## Positioning
+
+For engineering teams, the product promise is simple:
+
+- fewer stale-doc misses during PR review
+- fewer noisy bot comments than generic AI wrappers
+- visible evidence for every recommendation
+- an auditable learning loop instead of opaque prompt magic
+
+If the system is not confident enough to defend a recommendation, it should not comment.
 
 ## Try It In Two Minutes
 
@@ -281,6 +300,20 @@ Novyx usage in the current app:
 - `remember()` to save predictions and merged-PR feedback patterns for future PRs
 - `trace_create()`, `trace_step()`, and `trace_complete()` for auditable recommendation traces
 
+What is true today:
+
+- the app already stores patterns, traces, and feedback-linked memories
+- PR comments are suppressed below the confidence bar
+- the public proof page is suitable for public beta, not broad accuracy claims
+- public metrics stay hidden until both the 20-run window and a minimum reviewer-feedback floor are earned
+- broad lexical matches are pruned more aggressively than before
+
+What is next:
+
+- stronger repo-specific negative memory for "do not suggest this doc for this code area"
+- pre-comment eval gating beyond the current confidence threshold
+- tighter allow conditions for broad docs like `index.md`, `changelog.md`, and generic SDK pages
+
 GitHub auth options:
 
 - `GITHUB_TOKEN` for a simple bearer-token setup
@@ -311,9 +344,10 @@ Reference monitoring plan:
 
 Public proof and setup surfaces:
 
-- `/proof` gives a public-facing proof page with accepted examples and headline metrics
+- `/proof` gives a public-facing proof page for public beta with accepted examples and conservative proof-window copy
 - `/api/proof` returns the same proof data as JSON
 - both public proof surfaces are intentionally sanitized and do not expose repository names, PR numbers, changed file paths, or internal Novyx/audit payloads
+- top-line performance metrics remain hidden until the reviewer-feedback minimum is met, even after the run window is complete
 - `/dashboard` now includes setup status, resolved docs source, trust metrics, and hotspot visibility
 - `/dashboard` and `/api/dashboard` stay private behind `DASHBOARD_SECRET`
 - PR comments now include a `Trust Signals` block so reviewers can see why a recommendation cleared the bar
@@ -322,9 +356,9 @@ Public proof and setup surfaces:
 
 Near-term:
 
-- doc ownership rules
-- route and API surface mapping
-- release-note generation
+- repo-specific negative memory from reviewer rejections
+- pre-comment eval gating for borderline recommendations
+- stricter suppression for broad docs unless explicit structural evidence exists
 
 Later:
 

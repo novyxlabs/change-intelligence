@@ -547,6 +547,46 @@ index 1111111..2222222 100644
         else:
             self.assertEqual(github_client.deleted_comments[0][3], 123)
 
+    def test_process_github_event_skips_installation_lookup_when_token_auth_is_active(self):
+        patch = (FIXTURES / "sample.patch").read_text(encoding="utf8")
+        body = json.dumps(
+            {
+                "action": "opened",
+                "number": 42,
+                "repository": {"full_name": "acme/app"},
+                "pull_request": {
+                    "patch": patch,
+                    "head": {"sha": "abc123"},
+                },
+            }
+        )
+
+        class TokenPreferredGitHubClient(FakeGitHubClient):
+            def repository_installation_id(self, owner, repo):
+                raise AssertionError("token auth should not resolve installation ids")
+
+            def auth_mode(self):
+                return "token"
+
+        github_client = TokenPreferredGitHubClient(patch)
+        result = process_github_event(
+            body,
+            None,
+            ServiceConfig(
+                docs_root=FIXTURES / "repo" / "docs",
+                github_client=github_client,
+                confidence_threshold=60,
+            ),
+        )
+
+        self.assertEqual(result["status_code"], 200)
+        self.assertEqual(github_client.docs_requests[0][-1], None)
+        self.assertEqual(github_client.file_requests[0][-1], None)
+        if github_client.comments:
+            self.assertEqual(github_client.comments[0][3], None)
+        else:
+            self.assertEqual(github_client.deleted_comments[0][3], None)
+
     def test_invalid_signature_is_rejected(self):
         result = process_github_event(
             "{}",
@@ -554,6 +594,34 @@ index 1111111..2222222 100644
             ServiceConfig(docs_root=FIXTURES / "repo" / "docs", webhook_secret="secret"),
         )
         self.assertEqual(result["status_code"], 401)
+
+    def test_process_github_event_ignores_ping_payloads(self):
+        body = json.dumps(
+            {
+                "zen": "Keep it logically awesome.",
+                "hook_id": 123,
+                "repository": {"full_name": "acme/app"},
+            }
+        )
+
+        class NoTouchGitHubClient:
+            def __getattr__(self, name):
+                raise AssertionError(f"unexpected GitHub client call: {name}")
+
+        result = process_github_event(
+            body,
+            None,
+            ServiceConfig(
+                docs_root=FIXTURES / "repo" / "docs",
+                github_client=NoTouchGitHubClient(),
+                confidence_threshold=60,
+            ),
+        )
+
+        self.assertEqual(result["status_code"], 200)
+        self.assertTrue(result["payload"]["ok"])
+        self.assertTrue(result["payload"]["ignored"])
+        self.assertEqual(result["payload"]["reason"], "unsupported-event")
 
     def test_missing_patch_without_github_access_returns_bad_request(self):
         body = json.dumps(

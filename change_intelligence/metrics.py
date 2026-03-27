@@ -40,6 +40,24 @@ def metadata_for(memory: Dict[str, object]) -> Dict[str, object]:
     return metadata if isinstance(metadata, dict) else {}
 
 
+def is_restored_backfill_run(memory: Dict[str, object]) -> bool:
+    metadata = metadata_for(memory)
+    return bool(metadata.get("metadata_restored")) or metadata.get("source") == "github-comment-backfill"
+
+
+def is_broad_public_doc(doc: object) -> bool:
+    if not isinstance(doc, str):
+        return False
+    path = doc.lower()
+    return (
+        path == "index.md"
+        or path.endswith("/index.md")
+        or path == "changelog.md"
+        or path.endswith("/changelog.md")
+        or path.startswith("sdks/")
+    )
+
+
 def area_for_changed_files(changed_files: object) -> str:
     if not isinstance(changed_files, list) or not changed_files:
         return "unknown"
@@ -237,6 +255,8 @@ def summarize_case_studies(feedback: Iterable[Dict[str, object]], runs: Iterable
         repository = repository_for(run)
         if not isinstance(top_doc, str) or not top_doc:
             continue
+        if is_restored_backfill_run(run) and is_broad_public_doc(top_doc):
+            continue
         case_studies.append(
             {
                 "repository": repository,
@@ -272,6 +292,8 @@ def summarize_hotspots(feedback: Iterable[Dict[str, object]], runs: Iterable[Dic
 
     hotspots: Dict[str, Dict[str, object]] = {}
     for run in latest_runs:
+        if is_restored_backfill_run(run):
+            continue
         context = run.get("context")
         metadata = metadata_for(run)
         area = area_for_changed_files(metadata.get("changed_files"))
@@ -515,13 +537,19 @@ def compute_metrics(store: NovyxStore, limit: int = 500) -> dict[str, object]:
     metrics["hotspots"] = summarize_hotspots(feedback, runs)
 
     analysis_runs = int(metrics["analysis_runs"])
+    feedback_total = int(metrics["feedback_total"])
+    minimum_feedback = 10
     metrics["proof_window"] = {
         "minimum_prs": 20,
         "maximum_prs": 30,
+        "minimum_feedback": minimum_feedback,
         "analysis_runs": analysis_runs,
         "unique_prs": analysis_runs,
+        "feedback_total": feedback_total,
         "remaining_to_minimum": max(0, 20 - analysis_runs),
+        "remaining_feedback_to_minimum": max(0, minimum_feedback - feedback_total),
         "ready_for_case_study": analysis_runs >= 20,
+        "ready_for_public_metrics": analysis_runs >= 20 and feedback_total >= minimum_feedback,
         "window_complete": 20 <= analysis_runs <= 30,
     }
     metrics["alerts"] = summarize_alerts(metrics)

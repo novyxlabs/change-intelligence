@@ -83,12 +83,25 @@ SYMBOL_PATTERNS = [
 ]
 
 
-def tokenize(value: str) -> List[str]:
-    return [
-        token.lower()
-        for token in TOKEN_SPLIT.split(value)
-        if token and len(token) > 2 and token.lower() not in STOPWORDS
+def split_identifier_tokens(value: str) -> List[str]:
+    parts = [
+        fragment
+        for fragment in re.findall(r"[A-Z]+(?=[A-Z][a-z]|[0-9]|$)|[A-Z]?[a-z]+|[0-9]+", value)
+        if fragment
     ]
+    return parts or [value]
+
+
+def tokenize(value: str) -> List[str]:
+    tokens: List[str] = []
+    for raw in TOKEN_SPLIT.split(value):
+        if not raw:
+            continue
+        for fragment in split_identifier_tokens(raw):
+            lowered = fragment.lower()
+            if len(lowered) > 2 and lowered not in STOPWORDS:
+                tokens.append(lowered)
+    return tokens
 
 
 @dataclass
@@ -357,6 +370,43 @@ def is_changelog_page(doc: DocIndex) -> bool:
     return path.endswith("changelog.md") or path == "changelog.md"
 
 
+def is_sdk_page(doc: DocIndex) -> bool:
+    path = doc.relative_path.lower()
+    return path.startswith("sdks/") or "/sdks/" in path
+
+
+def is_broad_doc_target(doc: DocIndex) -> bool:
+    return is_index_page(doc) or is_changelog_page(doc) or is_sdk_page(doc)
+
+
+def is_error_reference_page(doc: DocIndex) -> bool:
+    path = doc.relative_path.lower()
+    text = " ".join(doc.headings).lower()
+    return path.endswith("errors.md") or path == "errors.md" or "error reference" in text
+
+
+def has_structural_support(
+    matching_symbols: Sequence[str],
+    matching_surfaces: Sequence[str],
+    ownership_boost: int,
+    exact_file_hits: int,
+    accepted_hits: int,
+    missed_hits: int,
+    actual_doc_changed: bool,
+    audience_prior: bool = False,
+) -> bool:
+    return bool(
+        matching_symbols
+        or matching_surfaces
+        or ownership_boost
+        or exact_file_hits
+        or accepted_hits
+        or missed_hits
+        or actual_doc_changed
+        or audience_prior
+    )
+
+
 def exact_surface_targets(diff: DiffSummary, docs: Sequence[DocIndex]) -> Set[str]:
     if not diff.surfaces:
         return set()
@@ -511,14 +561,18 @@ def score_document(
     evidence: List[str] = []
     doc_signal = learned_signals.get(doc.relative_path) or learned_signals.get(Path(doc.relative_path).name) or {}
     domain_overlap = sorted(diff_domain_tokens(diff) & doc_domain_tokens(doc))
+    max_path_overlap = 0
+    has_basename_reference = False
 
     for changed_file in diff.files:
         if changed_file.is_test:
             continue
         path_overlap = intersection_size(changed_file.path_tokens, doc.tokens)
         content_overlap = intersection_size(changed_file.content_tokens, doc.tokens)
+        max_path_overlap = max(max_path_overlap, path_overlap)
 
         if changed_file.basename.lower() in doc.relative_path.lower():
+            has_basename_reference = True
             score += 8
             evidence.append(f"Path references changed file basename `{changed_file.basename}`")
 
@@ -551,6 +605,19 @@ def score_document(
         score += len(domain_overlap) * 28
         evidence.append(f"Domain match for this change: {', '.join(domain_overlap)}")
 
+    error_focused_change = any(
+        "error" in changed_file.path_tokens
+        or "errors" in changed_file.path_tokens
+        or changed_file.basename.lower().startswith("error")
+        for changed_file in diff.files
+        if not changed_file.is_test
+    )
+    audience_prior = False
+    if error_focused_change and is_error_reference_page(doc) and doc_matches_audience(doc, SUPPORT_DOC_HINTS):
+        audience_prior = True
+        score += 44
+        evidence.append(f"Support-doc prior: `{doc.relative_path}` matches an error-focused change")
+
     if is_reference_expansion(diff):
         if is_reference_page(doc):
             score += 140
@@ -568,6 +635,13 @@ def score_document(
     if exact_file_hits:
         score += exact_file_hits * 26
         evidence.append(f"Novyx remembers this exact changed file mapping to `{doc.relative_path}` ({exact_file_hits} matches)")
+
+    exact_rejected_file_hits = int(doc_signal.get("exact_rejected_file_hits", 0) or 0)
+    if exact_rejected_file_hits:
+        score -= exact_rejected_file_hits * 34
+        evidence.append(
+            f"Novyx remembers this exact changed file was rejected for `{doc.relative_path}` ({exact_rejected_file_hits} false positives)"
+        )
 
     accepted_hits = int(doc_signal.get("accepted_hits", 0) or 0)
     if accepted_hits:
@@ -608,13 +682,52 @@ def score_document(
             evidence_line += f" ({descriptions[0]})"
         evidence.append(evidence_line)
 
-    if doc.relative_path in actual_docs_changed or Path(doc.relative_path).name in actual_docs_changed:
+    actual_doc_changed = doc.relative_path in actual_docs_changed or Path(doc.relative_path).name in actual_docs_changed
+    if actual_doc_changed:
         score += 30
         evidence.append(f"PR already changed `{doc.relative_path}`, confirming relevance")
 
     confidence = max(0, min(100, score))
     if (accepted_hits >= 2 or exact_file_hits >= 1 or missed_hits >= 2) and rejected_hits == 0:
         confidence = max(confidence, 72)
+    if (
+        not has_structural_support(
+            matching_symbols,
+            matching_surfaces,
+            ownership_boost,
+            exact_file_hits,
+            accepted_hits,
+            missed_hits,
+            actual_doc_changed,
+            audience_prior,
+        )
+        and not has_basename_reference
+        and max_path_overlap < 2
+    ):
+        confidence = min(confidence, 58)
+        score = min(score, 58)
+        evidence.append(
+            f"Confidence capped because `{doc.relative_path}` only matched weak term overlap without a structural doc signal"
+        )
+    if (
+        is_broad_doc_target(doc)
+        and not has_structural_support(
+            matching_symbols,
+            matching_surfaces,
+            ownership_boost,
+            exact_file_hits,
+            accepted_hits,
+            missed_hits,
+            actual_doc_changed,
+            audience_prior,
+        )
+        and not has_basename_reference
+    ):
+        confidence = min(confidence, 34)
+        score = min(score, 34)
+        evidence.append(
+            f"Confidence capped because `{doc.relative_path}` is a broad doc target without explicit structural support"
+        )
     if is_security_fix(diff) and not domain_overlap:
         confidence = min(confidence, 45)
         score = min(score, 45)
@@ -624,13 +737,15 @@ def score_document(
         score = min(score, 35)
         evidence.append(f"Confidence capped because `{doc.relative_path}` is a broad index page without strong identifier matches")
     if (
-        rejected_hits > 0
+        (rejected_hits > 0 or exact_rejected_file_hits > 0)
         and accepted_hits == 0
         and missed_hits == 0
+        and exact_file_hits == 0
         and doc.relative_path not in actual_docs_changed
         and Path(doc.relative_path).name not in actual_docs_changed
     ):
-        confidence = min(confidence, 35 if rejected_hits >= 2 else 45)
+        strong_negative_hits = max(rejected_hits, exact_rejected_file_hits)
+        confidence = min(confidence, 25 if strong_negative_hits >= 2 else 38)
         evidence.append(f"Confidence capped because Novyx learned `{doc.relative_path}` was a false positive for similar changes")
     return {
         "path": doc.path,
@@ -643,6 +758,7 @@ def score_document(
         "accepted_hits": accepted_hits,
         "missed_hits": missed_hits,
         "rejected_hits": rejected_hits,
+        "exact_rejected_file_hits": exact_rejected_file_hits,
         "surface_match_count": len(matching_surfaces),
         "surface_match_specificity": sum(surface_specificity(surface) for surface in matching_surfaces),
         "domain_overlap_count": len(domain_overlap),
@@ -1018,7 +1134,7 @@ def analyze_patch(
         files=diff.files,
         symbols=diff.symbols,
         added_identifiers=diff.added_identifiers,
-        surfaces=relevant_surfaces or diff.surfaces,
+        surfaces=relevant_surfaces,
     )
     recommendations = rank_documents(
         ranking_diff,

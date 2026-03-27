@@ -54,6 +54,48 @@ class SurfaceMapTests(unittest.TestCase):
             {"/repos/{owner}/{repo}/installation"},
         )
 
+    def test_extract_surfaces_from_line_ignores_markup_and_trims_attribute_quotes(self):
+        self.assertEqual(extract_surfaces_from_line("</span>"), set())
+        self.assertEqual(extract_surfaces_from_line("<Link href='/pricing'>Pricing</Link>"), {"/pricing"})
+
+    def test_broad_docs_need_structural_support_to_outrank_specific_docs(self):
+        patch = """diff --git a/src/pages/Errors.tsx b/src/pages/Errors.tsx
+index 1111111..2222222 100644
+--- a/src/pages/Errors.tsx
++++ b/src/pages/Errors.tsx
+@@ -1,0 +1,3 @@
++renderErrorState();
++showErrorReference();
++// update copy around error states
+"""
+        docs = [
+            {
+                "path": "docs/errors.md",
+                "relative_path": "errors.md",
+                "content": "# Error Reference\n\nHow to interpret product error states and troubleshooting steps.",
+            },
+            {
+                "path": "docs/changelog.md",
+                "relative_path": "changelog.md",
+                "content": "# Changelog\n\nGeneral release log and historical updates.",
+            },
+            {
+                "path": "docs/index.md",
+                "relative_path": "index.md",
+                "content": "# Documentation Home\n\nOverview of the documentation set.",
+            },
+        ]
+
+        result = analyze_patch(patch, docs=docs, repository="novyxlabs/novyx-site")
+
+        self.assertEqual(result["recommendations"][0]["relative_path"], "errors.md")
+        broad_targets = {
+            item["relative_path"]: item
+            for item in result["recommendations"]
+            if item["relative_path"] in {"changelog.md", "index.md"}
+        }
+        self.assertEqual(broad_targets, {})
+
     def test_analyze_patch_prefers_docs_with_exact_surface_matches(self):
         result = analyze_patch(PATCH, docs=DOCS, repository="acme/app")
 
@@ -344,6 +386,135 @@ index 1111111..2222222 100644
 
         self.assertEqual(result["recommendations"][0]["relative_path"], "api-reference/webhooks.md")
         self.assertGreater(result["recommendations"][0]["score"], result["recommendations"][1]["score"])
+
+    def test_copy_only_marketing_changes_do_not_clear_comment_threshold_from_weak_overlap(self):
+        patch = """diff --git a/src/pages/GetStarted.tsx b/src/pages/GetStarted.tsx
+index 1111111..2222222 100644
+--- a/src/pages/GetStarted.tsx
++++ b/src/pages/GetStarted.tsx
+@@ -1,0 +1,4 @@
++<section>
++  <span>Keep session continuity across devices.</span>
++  <Link href='/pricing'>View pricing</Link>
++</section>
+"""
+        docs = [
+            {
+                "path": "docs/index.md",
+                "relative_path": "index.md",
+                "content": "# Novyx Documentation\n\nOverview of agents, memory, rollback, and pricing.",
+            },
+            {
+                "path": "docs/changelog.md",
+                "relative_path": "changelog.md",
+                "content": "# Changelog\n\nTrack product updates for pricing and onboarding.",
+            },
+            {
+                "path": "docs/sdks/python.md",
+                "relative_path": "sdks/python.md",
+                "content": "# Python SDK\n\nStore memory, recall context, and manage agent sessions.",
+            },
+        ]
+
+        result = analyze_patch(patch, docs=docs, repository="novyxlabs/novyx-site")
+
+        self.assertEqual(result["summary"]["changed_surfaces"], [])
+        self.assertTrue(result["recommendations"])
+        self.assertLess(max(item["confidence"] for item in result["recommendations"]), 60)
+        self.assertTrue(
+            any(
+                "only matched weak term overlap without a structural doc signal" in line
+                for line in result["recommendations"][0]["evidence"]
+            )
+        )
+
+    def test_camel_case_guide_pages_match_slugged_guide_docs(self):
+        patch = """diff --git a/src/pages/GuideClaudeCode.tsx b/src/pages/GuideClaudeCode.tsx
+index 1111111..2222222 100644
+--- a/src/pages/GuideClaudeCode.tsx
++++ b/src/pages/GuideClaudeCode.tsx
+@@ -1,0 +1,3 @@
++Claude Code now replays prior decisions across sessions.
++Shared context keeps project history synced across machines.
++Rollback history is available when the coding agent goes off track.
+"""
+        docs = [
+            {
+                "path": "docs/guides/claude-code.md",
+                "relative_path": "guides/claude-code.md",
+                "content": "# Claude Code + Novyx\n\nAdd persistent memory, shared context, and rollback history to Claude Code.",
+            },
+            {
+                "path": "docs/changelog.md",
+                "relative_path": "changelog.md",
+                "content": "# Changelog\n\nRecent platform updates.",
+            },
+        ]
+
+        result = analyze_patch(patch, docs=docs, repository="novyxlabs/novyx-site")
+
+        self.assertEqual(result["recommendations"][0]["relative_path"], "guides/claude-code.md")
+        self.assertEqual(len(result["recommendations"]), 1)
+
+    def test_errors_page_prefers_errors_doc_after_slug_and_path_overlap(self):
+        patch = """diff --git a/src/pages/Errors.tsx b/src/pages/Errors.tsx
+index 1111111..2222222 100644
+--- a/src/pages/Errors.tsx
++++ b/src/pages/Errors.tsx
+@@ -1,0 +1,3 @@
++retry_after_seconds helps clients back off after 429 responses.
++request_id should be included when reporting 500 errors.
++The error reference now explains rollback quota failures in more detail.
+"""
+        docs = [
+            {
+                "path": "docs/errors.md",
+                "relative_path": "errors.md",
+                "content": "# Error Reference\n\nHandle 429 responses, request_id tracing, and rollback quota failures.",
+            },
+            {
+                "path": "docs/sdks/python.md",
+                "relative_path": "sdks/python.md",
+                "content": "# Python SDK\n\nCall the API and handle retries in Python.",
+            },
+        ]
+
+        result = analyze_patch(patch, docs=docs, repository="novyxlabs/novyx-site")
+
+        self.assertEqual(result["recommendations"][0]["relative_path"], "errors.md")
+
+    def test_error_reference_page_outranks_api_docs_for_troubleshooting_copy(self):
+        patch = """diff --git a/src/pages/Errors.tsx b/src/pages/Errors.tsx
+index 1111111..2222222 100644
+--- a/src/pages/Errors.tsx
++++ b/src/pages/Errors.tsx
+@@ -1,0 +1,4 @@
++retry_after_seconds helps clients back off after 429 responses.
++request_id should be included when reporting 500 errors.
++Rollback quota failures now point users to the troubleshooting flow.
++This page explains common API errors and how to fix them.
+"""
+        docs = [
+            {
+                "path": "docs/errors.md",
+                "relative_path": "errors.md",
+                "content": "# Error Reference\n\nTroubleshoot 429 retries, request_id tracing, rollback quota failures, and common API errors.",
+            },
+            {
+                "path": "docs/api-reference/memories.md",
+                "relative_path": "api-reference/memories.md",
+                "content": "# Memories API\n\nStore observations and handle write conflicts.",
+            },
+            {
+                "path": "docs/api-reference/replay.md",
+                "relative_path": "api-reference/replay.md",
+                "content": "# Replay API\n\nReplay history and rollback state changes.",
+            },
+        ]
+
+        result = analyze_patch(patch, docs=docs, repository="novyxlabs/novyx-site")
+
+        self.assertEqual(result["recommendations"][0]["relative_path"], "errors.md")
 
 if __name__ == "__main__":
     unittest.main()

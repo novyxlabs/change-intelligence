@@ -61,10 +61,10 @@ class GitHubClient:
         )
 
     def auth_mode(self) -> str:
-        if self.config.app_id and self.config.private_key:
-            return "app"
         if self.config.token:
             return "token"
+        if self.config.app_id and self.config.private_key:
+            return "app"
         return "none"
 
     def _request(
@@ -124,11 +124,16 @@ class GitHubClient:
         cache_key = (owner, repo)
         if cache_key in self._repo_installation_cache:
             return self._repo_installation_cache[cache_key]
-        response = self._request(
-            "GET",
-            f"/repos/{owner}/{repo}/installation",
-            token=self._app_jwt(),
-        )
+        try:
+            response = self._request(
+                "GET",
+                f"/repos/{owner}/{repo}/installation",
+                token=self._app_jwt(),
+            )
+        except requests.HTTPError as error:
+            if error.response is not None and error.response.status_code == 404:
+                return None
+            raise
         installation_id = response.json().get("id")
         if not isinstance(installation_id, int):
             raise ValueError(f"Missing installation id for {owner}/{repo}.")
@@ -173,6 +178,29 @@ class GitHubClient:
             response = self._request(
                 "GET",
                 f"/repos/{owner}/{repo}/issues/{issue_number}/comments",
+                token=token,
+                params={"per_page": 100, "page": page},
+            )
+            batch = response.json()
+            comments.extend(batch)
+            if len(batch) < 100:
+                break
+            page += 1
+        return comments
+
+    def repository_issue_comments(
+        self,
+        owner: str,
+        repo: str,
+        installation_id: Optional[int],
+    ) -> List[Dict[str, object]]:
+        token = self._installation_token(installation_id)
+        page = 1
+        comments: List[Dict[str, object]] = []
+        while True:
+            response = self._request(
+                "GET",
+                f"/repos/{owner}/{repo}/issues/comments",
                 token=token,
                 params={"per_page": 100, "page": page},
             )

@@ -35,12 +35,14 @@ class AppHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _dashboard_enabled(self) -> bool:
+        return bool(self.config.dashboard_secret)
+
     def _dashboard_authorized(self) -> bool:
-        secret = self.config.dashboard_secret
-        if not secret:
-            return True
+        if not self._dashboard_enabled():
+            return False
         provided = self.headers.get("X-Dashboard-Secret")
-        return provided == secret
+        return provided == self.config.dashboard_secret
 
     def do_GET(self):
         if self.path == "/health":
@@ -54,12 +56,18 @@ class AppHandler(BaseHTTPRequestHandler):
             self._html(200, render_public_proof_html(payload))
             return
         if self.path == "/api/dashboard":
+            if not self._dashboard_enabled():
+                self._json(404, {"error": "Not found"})
+                return
             if not self._dashboard_authorized():
                 self._json(401, {"error": "Unauthorized"})
                 return
             self._json(200, build_dashboard_payload(self.config.novyx_store, service_config=self.config))
             return
         if self.path == "/dashboard":
+            if not self._dashboard_enabled():
+                self._json(404, {"error": "Not found"})
+                return
             if not self._dashboard_authorized():
                 self._json(401, {"error": "Unauthorized"})
                 return

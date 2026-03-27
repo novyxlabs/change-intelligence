@@ -90,6 +90,46 @@ class NoFeedbackDashboardStore(FakeStore):
         self.feedback = []
 
 
+class RunReadyLowFeedbackStore(FakeStore):
+    def __init__(self):
+        self.feedback = []
+        self.runs = []
+        for index in range(1, 23):
+            context = f"novyxlabs/novyx-core#{index}"
+            self.runs.append(
+                {
+                    "tags": ["analysis-run", "review-recommended", "commented"],
+                    "context": context,
+                    "created_at": f"2026-03-{index:02d}T12:00:00Z",
+                    "metadata": {
+                        "repository": "novyxlabs/novyx-core",
+                        "pull_request_number": index,
+                        "top_doc": f"doc-{index}.md",
+                        "top_confidence": 84,
+                        "confidence_tier": "review-recommended",
+                        "comment_suppressed": False,
+                        "recommendation_count": 1,
+                        "changed_files": [f"src/area{index}/file.ts"],
+                    },
+                }
+            )
+        for index in range(1, 5):
+            self.feedback.append(
+                {
+                    "tags": ["ci-feedback", "correct"],
+                    "context": f"novyxlabs/novyx-core#{index}",
+                    "created_at": f"2026-03-{index:02d}T12:01:00Z",
+                    "metadata": {
+                        "repository": "novyxlabs/novyx-core",
+                        "pull_request_number": index,
+                        "feedback": "correct",
+                        "commenter": "blake",
+                        "comment_url": f"https://example.test/comment/{index}",
+                    },
+                }
+            )
+
+
 class DashboardTests(unittest.TestCase):
     def test_summarize_trust_handles_sparse_low_confidence_metrics(self):
         trust = summarize_trust(
@@ -121,6 +161,16 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(payload["setup"]["checks"][0]["label"], "GitHub auth")
         self.assertEqual(payload["setup"]["checks"][2]["status"], "ready")
         self.assertEqual(payload["errors"], [])
+
+    def test_public_proof_payload_hides_metrics_before_minimum_window(self):
+        payload = build_public_proof_payload(FakeStore(), limit=10)
+
+        self.assertIn("feedback window is still building", payload["headline"])
+        self.assertIsNone(payload["metrics"]["top_1_rate"])
+        self.assertIsNone(payload["metrics"]["comment_rate"])
+        self.assertIsNone(payload["metrics"]["false_positive_rate"])
+        self.assertEqual(payload["metrics"]["trust"]["label"], "building")
+        self.assertIn("reviewer-feedback minimum", payload["metrics"]["trust"]["summary"])
 
     def test_build_dashboard_payload_marks_docs_source_unverified_without_run(self):
         config = ServiceConfig(
@@ -185,6 +235,7 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("Trust Summary", html)
         self.assertIn("Current State", html)
         self.assertIn("Verified feedback", html)
+        self.assertIn("Building", html)
         self.assertIn("billing.md", html)
         self.assertNotIn("novyxlabs/novyx-core", html)
         self.assertNotIn("createCheckoutSession.ts", html)
@@ -195,6 +246,19 @@ class DashboardTests(unittest.TestCase):
         html = render_public_proof_html(payload)
         self.assertIn("The live loop is working and collecting runs", html)
         self.assertIn("Building", html)
+
+    def test_public_proof_payload_hides_performance_claims_until_feedback_minimum(self):
+        payload = build_public_proof_payload(RunReadyLowFeedbackStore(), limit=25)
+        self.assertIn("reviewer signals", payload["headline"])
+        self.assertTrue(payload["proof_window"]["ready_for_case_study"])
+        self.assertFalse(payload["proof_window"]["ready_for_public_metrics"])
+        self.assertIsNone(payload["metrics"]["top_1_rate"])
+        self.assertIsNone(payload["metrics"]["comment_rate"])
+        self.assertIsNone(payload["metrics"]["false_positive_rate"])
+        self.assertEqual(payload["metrics"]["trust"]["label"], "building")
+        html = render_public_proof_html(payload)
+        self.assertIn("4/10", html)
+        self.assertIn("enough reviewer feedback has accumulated", html)
 
     def test_server_serves_dashboard_json_and_html(self):
         def invoke(path: str, dashboard_secret: str = "", provided_secret: Optional[str] = None) -> tuple[int, dict[str, str], bytes]:
@@ -212,16 +276,14 @@ class DashboardTests(unittest.TestCase):
             return status["code"], headers, handler.wfile.getvalue()
 
         status, headers, body = invoke("/api/dashboard")
-        self.assertEqual(status, 200)
-        payload = json.loads(body.decode("utf8"))
-        self.assertEqual(payload["recent_runs"][0]["top_doc"], "billing.md")
+        self.assertEqual(status, 404)
         self.assertIn("application/json", headers["Content-Type"])
+        self.assertEqual(json.loads(body.decode("utf8"))["error"], "Not found")
 
         status, headers, body = invoke("/dashboard")
-        self.assertEqual(status, 200)
-        html = body.decode("utf8")
-        self.assertIn("text/html", headers["Content-Type"])
-        self.assertIn("Recent Feedback", html)
+        self.assertEqual(status, 404)
+        self.assertIn("application/json", headers["Content-Type"])
+        self.assertEqual(json.loads(body.decode("utf8"))["error"], "Not found")
 
         status, headers, body = invoke("/api/proof")
         self.assertEqual(status, 200)
@@ -258,8 +320,33 @@ class DashboardTests(unittest.TestCase):
 
         status, headers, body = invoke("/api/dashboard", provided_secret="top-secret")
         self.assertEqual(status, 200)
+
+    def test_server_serves_dashboard_when_secret_is_configured_and_provided(self):
+        def invoke(path: str, provided_secret: Optional[str] = None) -> tuple[int, dict[str, str], bytes]:
+            handler = AppHandler.__new__(AppHandler)
+            handler.path = path
+            handler.config = ServiceConfig(docs_root=".", novyx_store=FakeStore(), dashboard_secret="top-secret")
+            handler.wfile = BytesIO()
+            handler.headers = SimpleNamespace(get=lambda key, default=None: provided_secret if key == "X-Dashboard-Secret" else default)
+            status = {"code": None}
+            headers: dict[str, str] = {}
+            handler.send_response = lambda code: status.__setitem__("code", code)
+            handler.send_header = lambda key, value: headers.__setitem__(key, value)
+            handler.end_headers = lambda: None
+            handler.do_GET()
+            return status["code"], headers, handler.wfile.getvalue()
+
+        status, headers, body = invoke("/api/dashboard", provided_secret="top-secret")
+        self.assertEqual(status, 200)
+        payload = json.loads(body.decode("utf8"))
+        self.assertEqual(payload["recent_runs"][0]["top_doc"], "billing.md")
         self.assertIn("application/json", headers["Content-Type"])
-        self.assertEqual(json.loads(body.decode("utf8"))["recent_runs"][0]["top_doc"], "billing.md")
+
+        status, headers, body = invoke("/dashboard", provided_secret="top-secret")
+        self.assertEqual(status, 200)
+        html = body.decode("utf8")
+        self.assertIn("text/html", headers["Content-Type"])
+        self.assertIn("Recent Feedback", html)
 
 
 if __name__ == "__main__":
