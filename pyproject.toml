@@ -21,3 +21,6 @@ dev = [
 
 [tool.setuptools]
 packages = ["change_intelligence"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
